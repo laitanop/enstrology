@@ -110,10 +110,21 @@ export function computeSourceNamehash(sourceEnsName: string): `0x${string}` {
   return namehash(normalized);
 }
 
+async function assertContractDeployed(address: `0x${string}`, label: string): Promise<void> {
+  const bytecode = await publicClient.getCode({ address });
+  if (!bytecode || bytecode === '0x') {
+    throw new Error(`${label} is not deployed at ${address} on Sepolia`);
+  }
+}
+
 export async function getReadingRecord(readingNamehash: `0x${string}`): Promise<OnChainReading> {
   if (!ENSTROLOGY_PAY_ADDRESS) {
     throw new Error('Missing ENSTROLOGYP_PAY_ADDRESS');
   }
+  await assertContractDeployed(
+    ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
+    'ENStrologyPay contract'
+  );
 
   const reading = await publicClient.readContract({
     address: ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
@@ -152,6 +163,10 @@ export async function getPurchasedReadings(
   if (!ENSTROLOGY_PAY_ADDRESS) {
     throw new Error('Missing ENSTROLOGYP_PAY_ADDRESS');
   }
+  await assertContractDeployed(
+    ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
+    'ENStrologyPay contract'
+  );
 
   if (fromBlock > toBlock) {
     throw new Error('fromBlock must be <= toBlock');

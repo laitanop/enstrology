@@ -1,68 +1,121 @@
-import Image from "next/image";
+import { headers } from 'next/headers';
+import CreateReadingForm, { type CreateReadingState } from './create-reading-form';
+
+const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
+
+async function createReadingAction(
+  _prevState: CreateReadingState,
+  formData: FormData
+): Promise<CreateReadingState> {
+  'use server';
+
+  const sourceEnsName = String(formData.get('sourceEnsName') || '')
+    .trim()
+    .toLowerCase();
+  const birthdate = String(formData.get('birthdate') || '').trim();
+  const readingNamehash = String(formData.get('readingNamehash') || '').trim();
+  const visibility = String(formData.get('visibility') || 'private').trim();
+
+  if (!sourceEnsName || !birthdate || !readingNamehash) {
+    return { status: 'error', message: 'Missing required fields.' };
+  }
+  if (!ENS_NAME_REGEX.test(sourceEnsName)) {
+    return { status: 'error', message: 'Invalid ENS name format.' };
+  }
+  if (!READING_NAMEHASH_REGEX.test(readingNamehash)) {
+    return { status: 'error', message: 'Invalid readingNamehash format.' };
+  }
+  if (Number.isNaN(Date.parse(birthdate))) {
+    return { status: 'error', message: 'Invalid birthdate.' };
+  }
+  if (visibility !== 'private' && visibility !== 'public') {
+    return { status: 'error', message: 'Invalid visibility option.' };
+  }
+
+  const oracleWriteApiKey = process.env.ORACLE_WRITE_API_KEY;
+  if (!oracleWriteApiKey) {
+    return { status: 'error', message: 'Server missing ORACLE_WRITE_API_KEY.' };
+  }
+
+  try {
+    const requestHeaders = await headers();
+    const host = requestHeaders.get('x-forwarded-host') || requestHeaders.get('host');
+    const protocol = requestHeaders.get('x-forwarded-proto') || 'http';
+    if (!host) {
+      return { status: 'error', message: 'Could not resolve request host.' };
+    }
+
+    const response = await fetch(`${protocol}://${host}/api/oracle/write`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${oracleWriteApiKey}`,
+      },
+      body: JSON.stringify({
+        readingNamehash,
+        sourceEnsName,
+        birthdate,
+      }),
+      cache: 'no-store',
+    });
+
+    const responseJson = (await response.json()) as {
+      success?: boolean;
+      error?: string;
+      horoscope?: {
+        sign: string;
+        title: string;
+        reading: string;
+        luckyColor: string;
+        luckyNumber: string;
+      };
+      transactions?: Record<string, string>;
+    };
+
+    if (!response.ok || !responseJson.success || !responseJson.horoscope || !responseJson.transactions) {
+      return {
+        status: 'error',
+        message: responseJson.error || 'Failed to create reading.',
+      };
+    }
+
+    const visibilityMessage =
+      visibility === 'public'
+        ? ' Reading created and marked public in the payment contract.'
+        : ' Reading created as private.';
+
+    return {
+      status: 'success',
+      message: `Success.${visibilityMessage}`,
+      result: {
+        sourceEnsName,
+        birthdate,
+        readingNamehash,
+        visibility,
+        horoscope: responseJson.horoscope,
+        transactions: responseJson.transactions,
+      },
+    };
+  } catch (error) {
+    // Keep generic errors by default, but surface config issues for faster setup fixes.
+    const safeMessage =
+      error instanceof Error &&
+      (error.message.includes('not deployed at') || error.message.includes('Missing ENSTROLOGYP_PAY_ADDRESS'))
+        ? error.message
+        : 'Unexpected server error while creating reading.';
+    return {
+      status: 'error',
+      message: safeMessage,
+    };
+  }
+}
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <div className="min-h-screen bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-black dark:text-zinc-100">
+      <main className="mx-auto flex w-full max-w-2xl flex-col items-center">
+        <CreateReadingForm action={createReadingAction} />
       </main>
     </div>
   );
