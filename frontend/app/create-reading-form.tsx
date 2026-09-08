@@ -91,6 +91,8 @@ type CreateReadingFormProps = {
   ) => Promise<CreateReadingState>;
 };
 
+type OwnershipStatus = 'idle' | 'verifying' | 'verified' | 'unverified';
+
 function dateToCompact(dateISO: string): string {
   return dateISO.replaceAll('-', '');
 }
@@ -114,6 +116,9 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
   const [visibilityTxHash, setVisibilityTxHash] = useState<string>('');
   const [isPaying, setIsPaying] = useState<boolean>(false);
   const [isDetectingBirthday, setIsDetectingBirthday] = useState<boolean>(false);
+  const [ownershipStatus, setOwnershipStatus] = useState<OwnershipStatus>('idle');
+  const [ownershipMessage, setOwnershipMessage] = useState<string>('');
+  const [verifiedIdentityKey, setVerifiedIdentityKey] = useState<string>('');
   const [isDispatchPending, startDispatchTransition] = useTransition();
 
   const isBusy = isPending || isPaying || isDispatchPending || isDetectingBirthday;
@@ -202,6 +207,59 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
     }
   };
 
+  const verifyOwnership = async (
+    walletInput?: `0x${string}`,
+    sourceInput?: string
+  ): Promise<boolean> => {
+    const wallet = (walletInput || walletAddress).trim().toLowerCase();
+    const source = (sourceInput || sourceEnsName).trim().toLowerCase();
+
+    if (!wallet) {
+      setLocalError('Connect your wallet first.');
+      setOwnershipStatus('unverified');
+      setOwnershipMessage('Wallet not connected.');
+      return false;
+    }
+    if (!source) {
+      setLocalError('Enter sourceEnsName first.');
+      setOwnershipStatus('unverified');
+      setOwnershipMessage('No source name/address provided.');
+      return false;
+    }
+
+    setLocalError('');
+    setOwnershipStatus('verifying');
+    setOwnershipMessage('Checking ownership on Sepolia...');
+    try {
+      const response = await fetch(
+        `/api/ens/verify-control?source=${encodeURIComponent(source)}&wallet=${encodeURIComponent(wallet)}`,
+        { cache: 'no-store' }
+      );
+      const json = (await response.json()) as {
+        verified?: boolean;
+        reason?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(json.error || 'Could not verify ownership');
+      }
+
+      const verified = Boolean(json.verified);
+      const reason = json.reason || (verified ? 'Ownership verified.' : 'Ownership not verified.');
+      setOwnershipStatus(verified ? 'verified' : 'unverified');
+      setOwnershipMessage(reason);
+      if (verified) {
+        setVerifiedIdentityKey(`${wallet}|${source}`);
+      }
+      return verified;
+    } catch (error) {
+      setOwnershipStatus('unverified');
+      setOwnershipMessage('Ownership check failed.');
+      setLocalError(error instanceof Error ? error.message : 'Could not verify ownership.');
+      return false;
+    }
+  };
+
   const ensureSepolia = async (): Promise<void> => {
     const provider = getProvider();
     const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
@@ -249,6 +307,18 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
 
       setFlowMessage('Switching to Sepolia...');
       await ensureSepolia();
+
+      const normalizedWallet = connectedWallet.toLowerCase() as `0x${string}`;
+      const currentIdentityKey = `${normalizedWallet}|${normalizedEns}`;
+      const isAlreadyVerified =
+        ownershipStatus === 'verified' && verifiedIdentityKey === currentIdentityKey;
+      if (!isAlreadyVerified) {
+        setFlowMessage('Verifying that wallet controls the source name...');
+        const verified = await verifyOwnership(normalizedWallet, normalizedEns);
+        if (!verified) {
+          throw new Error('Ownership verification failed. Use a source ENS/address controlled by this wallet.');
+        }
+      }
 
       const provider = getProvider();
       const publicClient = createPublicClient({
@@ -375,9 +445,52 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
             placeholder="pamela.eth"
             required
             value={sourceEnsName}
-            onChange={(event) => setSourceEnsName(event.target.value)}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setSourceEnsName(nextValue);
+              const nextKey = `${walletAddress.trim().toLowerCase()}|${nextValue.trim().toLowerCase()}`;
+              if (verifiedIdentityKey !== nextKey) {
+                setOwnershipStatus('idle');
+                setOwnershipMessage('');
+              }
+            }}
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
           />
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Verify this wallet controls the source on Sepolia before paying.
+            </p>
+            <button
+              type="button"
+              disabled={isBusy || !walletAddress.trim() || !sourceEnsName.trim()}
+              onClick={async () => {
+                await verifyOwnership(
+                  walletAddress ? (walletAddress as `0x${string}`) : undefined,
+                  sourceEnsName
+                );
+              }}
+              className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Verify Ownership
+            </button>
+          </div>
+          {ownershipStatus !== 'idle' ? (
+            <p
+              className={`text-xs ${
+                ownershipStatus === 'verified'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : ownershipStatus === 'verifying'
+                    ? 'text-zinc-600 dark:text-zinc-300'
+                    : 'text-red-600 dark:text-red-400'
+              }`}
+            >
+              {ownershipStatus === 'verified'
+                ? `Verified: ${ownershipMessage}`
+                : ownershipStatus === 'verifying'
+                  ? ownershipMessage || 'Verifying...'
+                  : `Not verified: ${ownershipMessage || 'Verification failed.'}`}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-1">
