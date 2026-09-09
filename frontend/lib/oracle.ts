@@ -9,14 +9,21 @@ const ENSTROLOGY_PAY_ADDRESS =
   process.env.ENSTROLOGYP_PAY_ADDRESS || process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS;
 const RESOLVER_ADDRESS = process.env.RESOLVER_ADDRESS || process.env.NEXT_PUBLIC_RESOLVER_ADDRESS;
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
+const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY;
 const DEFAULT_ORACLE_MODEL = process.env.ORACLE_MODEL || 'anthropic/claude-3.5-sonnet';
 const MAX_LOG_BLOCK_RANGE = BigInt(process.env.ORACLE_MAX_LOG_BLOCK_RANGE || '49000');
+const ALL_ROLES_MASK = BigInt(
+  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+);
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 if (!ORACLE_PRIVATE_KEY) {
   throw new Error('Missing ORACLE_PRIVATE_KEY');
 }
+
+const oracleAccount = privateKeyToAccount(ORACLE_PRIVATE_KEY as `0x${string}`);
+export const ORACLE_ADDRESS = oracleAccount.address;
 
 // Clients
 export const publicClient = createPublicClient({
@@ -27,7 +34,7 @@ export const publicClient = createPublicClient({
 export const oracleWalletClient = createWalletClient({
   chain: sepolia,
   transport: http(SEPOLIA_RPC),
-  account: privateKeyToAccount(ORACLE_PRIVATE_KEY as `0x${string}`),
+  account: oracleAccount,
 });
 
 // Contract ABIs
@@ -72,6 +79,20 @@ const ENSTROLOGY_PAY_ABI = [
   },
 ] as const;
 
+const RESOLVER_ROLES_ABI = [
+  {
+    name: 'revokeRoles',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'node', type: 'bytes32' },
+      { name: 'account', type: 'address' },
+      { name: 'roles', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+] as const;
+
 const READING_PURCHASED_EVENT = parseAbiItem(
   'event ReadingPurchased(address indexed buyer, bytes32 indexed sourceNamehash, bytes32 indexed readingNamehash, uint256 amount, uint256 timestamp)'
 );
@@ -101,6 +122,18 @@ export type PurchasedReadingEvent = {
   timestamp: bigint;
   blockNumber: bigint;
 };
+
+function getAppWalletClient() {
+  if (!APP_PRIVATE_KEY) {
+    throw new Error('Missing APP_PRIVATE_KEY');
+  }
+
+  return createWalletClient({
+    chain: sepolia,
+    transport: http(SEPOLIA_RPC),
+    account: privateKeyToAccount(APP_PRIVATE_KEY as `0x${string}`),
+  });
+}
 
 export function computeSourceNamehash(sourceEnsName: string): `0x${string}` {
   const normalized = sourceEnsName.trim().toLowerCase();
@@ -235,6 +268,26 @@ export async function writeTextRecord(
     abi: RESOLVER_ABI,
     functionName: 'setText',
     args: [namehash, key, value],
+  });
+
+  await publicClient.waitForTransactionReceipt({ hash });
+  return hash;
+}
+
+export async function revokeOracleTextRoles(
+  node: `0x${string}`,
+  roleMask: bigint = ALL_ROLES_MASK
+): Promise<`0x${string}`> {
+  if (!RESOLVER_ADDRESS) {
+    throw new Error('Missing RESOLVER_ADDRESS');
+  }
+
+  const appWalletClient = getAppWalletClient();
+  const hash = await appWalletClient.writeContract({
+    address: RESOLVER_ADDRESS as `0x${string}`,
+    abi: RESOLVER_ROLES_ABI,
+    functionName: 'revokeRoles',
+    args: [node, ORACLE_ADDRESS, roleMask],
   });
 
   await publicClient.waitForTransactionReceipt({ hash });

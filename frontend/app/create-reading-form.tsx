@@ -25,6 +25,14 @@ export type CreateReadingState = {
   };
 };
 
+export type PermissionProofResult = {
+  status: 'success' | 'expected_revert' | 'unexpected_success' | 'error';
+  message: string;
+  txHash?: string;
+  targetEnsName?: string;
+  oracleAddress?: string;
+};
+
 const INITIAL_STATE: CreateReadingState = {
   status: 'idle',
   message: '',
@@ -89,6 +97,9 @@ type CreateReadingFormProps = {
     state: CreateReadingState,
     formData: FormData
   ) => Promise<CreateReadingState>;
+  forbiddenWriteAction: (input: { targetEnsName: string }) => Promise<PermissionProofResult>;
+  revokeOracleAction: (input: { permissionEnsName: string }) => Promise<PermissionProofResult>;
+  retryOracleWriteAction: (input: { targetEnsName: string }) => Promise<PermissionProofResult>;
 };
 
 type OwnershipStatus = 'idle' | 'verifying' | 'verified' | 'unverified';
@@ -103,7 +114,12 @@ function getReadingEnsName(sourceEnsName: string, birthdate: string): string {
   return `${sourceLabel}-${compactDate}.oracle.enstrology.eth`;
 }
 
-export default function CreateReadingForm({ action }: CreateReadingFormProps) {
+export default function CreateReadingForm({
+  action,
+  forbiddenWriteAction,
+  revokeOracleAction,
+  retryOracleWriteAction,
+}: CreateReadingFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
   const [walletAddress, setWalletAddress] = useState<string>('');
   const [sourceEnsName, setSourceEnsName] = useState<string>('');
@@ -119,9 +135,15 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
   const [ownershipStatus, setOwnershipStatus] = useState<OwnershipStatus>('idle');
   const [ownershipMessage, setOwnershipMessage] = useState<string>('');
   const [verifiedIdentityKey, setVerifiedIdentityKey] = useState<string>('');
+  const [permissionNodeName, setPermissionNodeName] = useState<string>('oracle.enstrology.eth');
+  const [forbiddenResult, setForbiddenResult] = useState<PermissionProofResult | null>(null);
+  const [revokeResult, setRevokeResult] = useState<PermissionProofResult | null>(null);
+  const [retryResult, setRetryResult] = useState<PermissionProofResult | null>(null);
+  const [isProofPending, startProofTransition] = useTransition();
   const [isDispatchPending, startDispatchTransition] = useTransition();
 
-  const isBusy = isPending || isPaying || isDispatchPending || isDetectingBirthday;
+  const isBusy =
+    isPending || isPaying || isDispatchPending || isDetectingBirthday || isProofPending;
 
   const readingPreview = useMemo(() => {
     const normalized = sourceEnsName.trim().toLowerCase();
@@ -258,6 +280,16 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
       setLocalError(error instanceof Error ? error.message : 'Could not verify ownership.');
       return false;
     }
+  };
+
+  const getProofResultClassName = (result: PermissionProofResult): string => {
+    if (result.status === 'success' || result.status === 'expected_revert') {
+      return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300';
+    }
+    if (result.status === 'unexpected_success') {
+      return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300';
+    }
+    return 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300';
   };
 
   const ensureSepolia = async (): Promise<void> => {
@@ -583,6 +615,109 @@ export default function CreateReadingForm({ action }: CreateReadingFormProps) {
           {visibilityTxHash ? <p>setReadingPublished: {visibilityTxHash}</p> : null}
         </div>
       ) : null}
+
+      <div className="mt-6 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="font-medium">Permission Proof (ENSv2)</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Judge demo: prove Oracle cannot write forbidden fields, then revoke permission and prove
+          writes are blocked.
+        </p>
+
+        <div className="space-y-1">
+          <label htmlFor="permissionNodeName" className="text-xs font-medium">
+            Permission node for revoke test
+          </label>
+          <input
+            id="permissionNodeName"
+            type="text"
+            value={permissionNodeName}
+            onChange={(event) => setPermissionNodeName(event.target.value)}
+            placeholder="oracle.enstrology.eth"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950"
+          />
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <button
+            type="button"
+            disabled={isBusy || !sourceEnsName.trim()}
+            onClick={() =>
+              startProofTransition(async () => {
+                setFlowMessage('Attempting forbidden Oracle write...');
+                const result = await forbiddenWriteAction({
+                  targetEnsName: sourceEnsName.trim().toLowerCase(),
+                });
+                setForbiddenResult(result);
+                setFlowMessage(result.message);
+              })
+            }
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            1) Forbidden Write
+          </button>
+          <button
+            type="button"
+            disabled={isBusy || !permissionNodeName.trim()}
+            onClick={() =>
+              startProofTransition(async () => {
+                setFlowMessage('Revoking Oracle roles...');
+                const result = await revokeOracleAction({
+                  permissionEnsName: permissionNodeName.trim().toLowerCase(),
+                });
+                setRevokeResult(result);
+                setFlowMessage(result.message);
+              })
+            }
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            2) Revoke Oracle
+          </button>
+          <button
+            type="button"
+            disabled={isBusy || !permissionNodeName.trim()}
+            onClick={() =>
+              startProofTransition(async () => {
+                setFlowMessage('Attempting post-revoke Oracle write...');
+                const result = await retryOracleWriteAction({
+                  targetEnsName: permissionNodeName.trim().toLowerCase(),
+                });
+                setRetryResult(result);
+                setFlowMessage(result.message);
+              })
+            }
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            3) Retry Write
+          </button>
+        </div>
+
+        {forbiddenResult ? (
+          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}>
+            <p className="font-medium">Forbidden Write Result</p>
+            <p>{forbiddenResult.message}</p>
+            {forbiddenResult.txHash ? <p>tx: {forbiddenResult.txHash}</p> : null}
+            {forbiddenResult.oracleAddress ? <p>oracle: {forbiddenResult.oracleAddress}</p> : null}
+          </div>
+        ) : null}
+
+        {revokeResult ? (
+          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}>
+            <p className="font-medium">Revoke Result</p>
+            <p>{revokeResult.message}</p>
+            {revokeResult.txHash ? <p>tx: {revokeResult.txHash}</p> : null}
+            {revokeResult.oracleAddress ? <p>oracle: {revokeResult.oracleAddress}</p> : null}
+          </div>
+        ) : null}
+
+        {retryResult ? (
+          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}>
+            <p className="font-medium">Post-Revoke Write Result</p>
+            <p>{retryResult.message}</p>
+            {retryResult.txHash ? <p>tx: {retryResult.txHash}</p> : null}
+            {retryResult.oracleAddress ? <p>oracle: {retryResult.oracleAddress}</p> : null}
+          </div>
+        ) : null}
+      </div>
 
       {state.message ? (
         <div

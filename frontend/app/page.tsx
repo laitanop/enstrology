@@ -1,8 +1,31 @@
 import { headers } from 'next/headers';
-import CreateReadingForm, { type CreateReadingState } from './create-reading-form';
+import { namehash } from 'viem';
+import {
+  ORACLE_ADDRESS,
+  revokeOracleTextRoles,
+  writeTextRecord,
+} from '@/lib/oracle';
+import CreateReadingForm, {
+  type CreateReadingState,
+  type PermissionProofResult,
+} from './create-reading-form';
 
 const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return 'Unknown error';
+}
+
+function normalizeEnsName(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 async function createReadingAction(
   _prevState: CreateReadingState,
@@ -111,11 +134,141 @@ async function createReadingAction(
   }
 }
 
+async function forbiddenWriteAction(input: {
+  targetEnsName: string;
+}): Promise<PermissionProofResult> {
+  'use server';
+
+  const targetEnsName = normalizeEnsName(input.targetEnsName || '');
+  if (!ENS_NAME_REGEX.test(targetEnsName)) {
+    return {
+      status: 'error',
+      message: 'Invalid ENS name for forbidden-write test.',
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+
+  try {
+    const txHash = await writeTextRecord(
+      namehash(targetEnsName),
+      'source.name',
+      `forbidden-proof-${Date.now()}`
+    );
+    return {
+      status: 'unexpected_success',
+      message:
+        'Forbidden write unexpectedly succeeded. Permission boundary is not enforced on this node.',
+      txHash,
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    const reverted =
+      errorMessage.toLowerCase().includes('revert') ||
+      errorMessage.toLowerCase().includes('unauthorized');
+    return {
+      status: reverted ? 'expected_revert' : 'error',
+      message: reverted
+        ? 'Forbidden write reverted onchain (expected).'
+        : `Forbidden write failed with non-revert error: ${errorMessage}`,
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+}
+
+async function revokeOracleAction(input: {
+  permissionEnsName: string;
+}): Promise<PermissionProofResult> {
+  'use server';
+
+  const permissionEnsName = normalizeEnsName(input.permissionEnsName || '');
+  if (!ENS_NAME_REGEX.test(permissionEnsName)) {
+    return {
+      status: 'error',
+      message: 'Invalid ENS name for revoke test.',
+      targetEnsName: permissionEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+
+  try {
+    const txHash = await revokeOracleTextRoles(namehash(permissionEnsName));
+    return {
+      status: 'success',
+      message: 'Oracle text roles revoked successfully onchain.',
+      txHash,
+      targetEnsName: permissionEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    return {
+      status: 'error',
+      message: `Revoke failed: ${errorMessage}`,
+      targetEnsName: permissionEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+}
+
+async function retryOracleWriteAction(input: {
+  targetEnsName: string;
+}): Promise<PermissionProofResult> {
+  'use server';
+
+  const targetEnsName = normalizeEnsName(input.targetEnsName || '');
+  if (!ENS_NAME_REGEX.test(targetEnsName)) {
+    return {
+      status: 'error',
+      message: 'Invalid ENS name for retry-write test.',
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+
+  try {
+    const txHash = await writeTextRecord(
+      namehash(targetEnsName),
+      'horoscope.revokeTest',
+      `revoke-proof-${Date.now()}`
+    );
+    return {
+      status: 'unexpected_success',
+      message:
+        'Post-revoke write unexpectedly succeeded. Oracle still has permission on this node.',
+      txHash,
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    const reverted =
+      errorMessage.toLowerCase().includes('revert') ||
+      errorMessage.toLowerCase().includes('unauthorized');
+    return {
+      status: reverted ? 'expected_revert' : 'error',
+      message: reverted
+        ? 'Post-revoke write reverted onchain (expected).'
+        : `Post-revoke write failed with non-revert error: ${errorMessage}`,
+      targetEnsName,
+      oracleAddress: ORACLE_ADDRESS,
+    };
+  }
+}
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <main className="mx-auto flex w-full max-w-2xl flex-col items-center">
-        <CreateReadingForm action={createReadingAction} />
+        <CreateReadingForm
+          action={createReadingAction}
+          forbiddenWriteAction={forbiddenWriteAction}
+          revokeOracleAction={revokeOracleAction}
+          retryOracleWriteAction={retryOracleWriteAction}
+        />
       </main>
     </div>
   );
