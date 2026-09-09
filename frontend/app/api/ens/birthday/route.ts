@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
-const ENS_SUBGRAPH_ID = '5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
+const ENS_SUBGRAPH_ID =
+  process.env.ENS_SUBGRAPH_ID || '5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
 
 type GraphResponse = {
   data?: {

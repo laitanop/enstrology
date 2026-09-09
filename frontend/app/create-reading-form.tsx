@@ -1,6 +1,15 @@
 'use client';
 
-import { useActionState, useMemo, useState, useTransition, type FormEvent } from 'react';
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+} from 'react';
 import { createPublicClient, createWalletClient, custom, http, namehash } from 'viem';
 import { sepolia } from 'viem/chains';
 
@@ -39,6 +48,7 @@ const INITIAL_STATE: CreateReadingState = {
 };
 
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const PAY_ADDRESS = process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS as `0x${string}` | undefined;
 const DEMO_USDC_ADDRESS = process.env.NEXT_PUBLIC_DEMO_USDC_ADDRESS as `0x${string}` | undefined;
 const SEPOLIA_RPC =
@@ -84,11 +94,31 @@ const ENSTROLOGY_PAY_ABI = [
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void;
+  removeListener?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void;
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
+};
+
+type Eip6963ProviderInfo = {
+  uuid: string;
+  name: string;
+  icon: string;
+  rdns: string;
+};
+
+type Eip6963ProviderDetail = {
+  info: Eip6963ProviderInfo;
+  provider: EthereumProvider;
 };
 
 declare global {
   interface Window {
     ethereum?: EthereumProvider;
+  }
+
+  interface WindowEventMap {
+    'eip6963:announceProvider': CustomEvent<Eip6963ProviderDetail>;
   }
 }
 
@@ -112,6 +142,15 @@ function getReadingEnsName(sourceEnsName: string, birthdate: string): string {
   const sourceLabel = sourceEnsName.split('.')[0] || 'reading';
   const compactDate = dateToCompact(birthdate);
   return `${sourceLabel}-${compactDate}.oracle.enstrology.eth`;
+}
+
+function getPreferredInjectedProvider(): EthereumProvider | undefined {
+  const injected = window.ethereum;
+  if (!injected) {
+    return undefined;
+  }
+
+  return injected.providers?.find((provider) => provider.isMetaMask) || injected;
 }
 
 export default function CreateReadingForm({
@@ -141,6 +180,10 @@ export default function CreateReadingForm({
   const [retryResult, setRetryResult] = useState<PermissionProofResult | null>(null);
   const [isProofPending, startProofTransition] = useTransition();
   const [isDispatchPending, startDispatchTransition] = useTransition();
+  const [wallets, setWallets] = useState<Eip6963ProviderDetail[]>([]);
+  const [selectedWalletRdns, setSelectedWalletRdns] = useState<string>('');
+  const autoVerifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoVerifyKeyRef = useRef<string>('');
 
   const isBusy =
     isPending || isPaying || isDispatchPending || isDetectingBirthday || isProofPending;
@@ -157,12 +200,43 @@ export default function CreateReadingForm({
     };
   }, [sourceEnsName, birthdate]);
 
-  const getProvider = (): EthereumProvider => {
-    if (!window.ethereum) {
+  // EIP-6963 lets every installed wallet announce itself instead of racing for window.ethereum.
+  useEffect(() => {
+    const handleAnnouncement = (event: CustomEvent<Eip6963ProviderDetail>) => {
+      const detail = event.detail;
+      if (!detail?.info?.rdns || !detail.provider) {
+        return;
+      }
+      setWallets((previous) =>
+        previous.some((wallet) => wallet.info.rdns === detail.info.rdns)
+          ? previous
+          : [...previous, detail]
+      );
+    };
+
+    window.addEventListener('eip6963:announceProvider', handleAnnouncement);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    return () => window.removeEventListener('eip6963:announceProvider', handleAnnouncement);
+  }, []);
+
+  const activeWallet = useMemo(() => {
+    if (!wallets.length) {
+      return null;
+    }
+    return (
+      wallets.find((wallet) => wallet.info.rdns === selectedWalletRdns) ||
+      wallets.find((wallet) => wallet.info.rdns === 'io.metamask') ||
+      wallets[0]
+    );
+  }, [wallets, selectedWalletRdns]);
+
+  const getProvider = useCallback((): EthereumProvider => {
+    const provider = activeWallet?.provider || getPreferredInjectedProvider();
+    if (!provider) {
       throw new Error('No wallet found. Install MetaMask or another EVM wallet.');
     }
-    return window.ethereum;
-  };
+    return provider;
+  }, [activeWallet]);
 
   const connectWallet = async (): Promise<`0x${string}`> => {
     const provider = getProvider();
@@ -177,24 +251,75 @@ export default function CreateReadingForm({
     return wallet as `0x${string}`;
   };
 
-  const detectPrimaryEnsFromWallet = async (wallet: string): Promise<void> => {
+  const detectPrimaryEnsFromWallet = useCallback(async (wallet: string): Promise<string | null> => {
     try {
       const response = await fetch(
         `/api/ens/primary?address=${encodeURIComponent(wallet)}`,
         { cache: 'no-store' }
       );
       if (!response.ok) {
-        return;
+        return null;
       }
       const json = (await response.json()) as { ensName?: string | null };
       const detectedEns = (json.ensName || '').toLowerCase();
-      if (detectedEns && !sourceEnsName.trim()) {
-        setSourceEnsName(detectedEns);
-      }
+      return detectedEns || null;
     } catch {
       // Non-blocking helper.
+      return null;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const provider = activeWallet?.provider || getPreferredInjectedProvider();
+    if (!provider?.on) {
+      return;
+    }
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      const nextWallet = accounts[0] || '';
+      setWalletAddress(nextWallet);
+      setSourceEnsName('');
+      setOwnershipStatus('idle');
+      setOwnershipMessage('');
+      setVerifiedIdentityKey('');
+      lastAutoVerifyKeyRef.current = '';
+      setFlowMessage(
+        nextWallet
+          ? 'Wallet account changed. Detecting ENS name...'
+          : 'Wallet disconnected.'
+      );
+    };
+
+    provider.on('accountsChanged', handleAccountsChanged);
+    return () => provider.removeListener?.('accountsChanged', handleAccountsChanged);
+  }, [activeWallet]);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void detectPrimaryEnsFromWallet(walletAddress).then((detectedEns) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (detectedEns) {
+        setSourceEnsName(detectedEns);
+        setFlowMessage(`ENS detected: ${detectedEns}. Verifying ownership...`);
+      } else {
+        setFlowMessage(
+          'Wallet connected, but no ENS name is linked to this account on Sepolia. Set a primary ENS name (or an address record) for it, or type the name below.'
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress, detectPrimaryEnsFromWallet]);
 
   const detectBirthday = async (): Promise<void> => {
     setLocalError('');
@@ -229,58 +354,104 @@ export default function CreateReadingForm({
     }
   };
 
-  const verifyOwnership = async (
-    walletInput?: `0x${string}`,
-    sourceInput?: string
-  ): Promise<boolean> => {
-    const wallet = (walletInput || walletAddress).trim().toLowerCase();
-    const source = (sourceInput || sourceEnsName).trim().toLowerCase();
+  const verifyOwnership = useCallback(
+    async (walletInput?: `0x${string}`, sourceInput?: string): Promise<boolean> => {
+      const wallet = (walletInput || walletAddress).trim().toLowerCase();
+      const source = (sourceInput || sourceEnsName).trim().toLowerCase();
 
-    if (!wallet) {
-      setLocalError('Connect your wallet first.');
-      setOwnershipStatus('unverified');
-      setOwnershipMessage('Wallet not connected.');
-      return false;
-    }
-    if (!source) {
-      setLocalError('Enter sourceEnsName first.');
-      setOwnershipStatus('unverified');
-      setOwnershipMessage('No source name/address provided.');
-      return false;
-    }
-
-    setLocalError('');
-    setOwnershipStatus('verifying');
-    setOwnershipMessage('Checking ownership on Sepolia...');
-    try {
-      const response = await fetch(
-        `/api/ens/verify-control?source=${encodeURIComponent(source)}&wallet=${encodeURIComponent(wallet)}`,
-        { cache: 'no-store' }
-      );
-      const json = (await response.json()) as {
-        verified?: boolean;
-        reason?: string;
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(json.error || 'Could not verify ownership');
+      if (!wallet) {
+        setLocalError('Connect your wallet first.');
+        setOwnershipStatus('unverified');
+        setOwnershipMessage('Wallet not connected.');
+        return false;
+      }
+      if (!source) {
+        setLocalError('Enter sourceEnsName first.');
+        setOwnershipStatus('unverified');
+        setOwnershipMessage('No source name/address provided.');
+        return false;
       }
 
-      const verified = Boolean(json.verified);
-      const reason = json.reason || (verified ? 'Ownership verified.' : 'Ownership not verified.');
-      setOwnershipStatus(verified ? 'verified' : 'unverified');
-      setOwnershipMessage(reason);
-      if (verified) {
-        setVerifiedIdentityKey(`${wallet}|${source}`);
+      setLocalError('');
+      setOwnershipStatus('verifying');
+      setOwnershipMessage('Checking ownership on Sepolia...');
+      try {
+        const response = await fetch(
+          `/api/ens/verify-control?source=${encodeURIComponent(source)}&wallet=${encodeURIComponent(wallet)}`,
+          { cache: 'no-store' }
+        );
+        const json = (await response.json()) as {
+          verified?: boolean;
+          reason?: string;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(json.error || 'Could not verify ownership');
+        }
+
+        const verified = Boolean(json.verified);
+        const reason = json.reason || (verified ? 'Ownership verified.' : 'Ownership not verified.');
+        setOwnershipStatus(verified ? 'verified' : 'unverified');
+        setOwnershipMessage(reason);
+        if (verified) {
+          setVerifiedIdentityKey(`${wallet}|${source}`);
+        }
+        return verified;
+      } catch (error) {
+        setOwnershipStatus('unverified');
+        setOwnershipMessage('Ownership check failed.');
+        setLocalError(error instanceof Error ? error.message : 'Could not verify ownership.');
+        return false;
       }
-      return verified;
-    } catch (error) {
-      setOwnershipStatus('unverified');
-      setOwnershipMessage('Ownership check failed.');
-      setLocalError(error instanceof Error ? error.message : 'Could not verify ownership.');
-      return false;
+    },
+    [walletAddress, sourceEnsName]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (autoVerifyTimeoutRef.current) {
+        clearTimeout(autoVerifyTimeoutRef.current);
+        autoVerifyTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const wallet = walletAddress.trim().toLowerCase();
+    const source = sourceEnsName.trim().toLowerCase();
+    const isSourceVerifiable = ENS_NAME_REGEX.test(source) || ADDRESS_REGEX.test(source);
+
+    if (!wallet || !isSourceVerifiable) {
+      return;
     }
-  };
+
+    const identityKey = `${wallet}|${source}`;
+    const alreadyVerified = ownershipStatus === 'verified' && verifiedIdentityKey === identityKey;
+    if (alreadyVerified || ownershipStatus === 'verifying') {
+      return;
+    }
+
+    if (lastAutoVerifyKeyRef.current === identityKey) {
+      return;
+    }
+
+    if (autoVerifyTimeoutRef.current) {
+      clearTimeout(autoVerifyTimeoutRef.current);
+      autoVerifyTimeoutRef.current = null;
+    }
+
+    autoVerifyTimeoutRef.current = setTimeout(() => {
+      lastAutoVerifyKeyRef.current = identityKey;
+      void verifyOwnership(wallet as `0x${string}`, source);
+    }, 250);
+
+    return () => {
+      if (autoVerifyTimeoutRef.current) {
+        clearTimeout(autoVerifyTimeoutRef.current);
+        autoVerifyTimeoutRef.current = null;
+      }
+    };
+  }, [walletAddress, sourceEnsName, ownershipStatus, verifiedIdentityKey, verifyOwnership]);
 
   const getProofResultClassName = (result: PermissionProofResult): string => {
     if (result.status === 'success' || result.status === 'expected_revert') {
@@ -439,30 +610,85 @@ export default function CreateReadingForm({
         Connect wallet, pay 0.01 demo USDC, then write horoscope text records onchain.
       </p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              setLocalError('');
-              setFlowMessage('Connecting wallet...');
-              const wallet = await connectWallet();
-              await ensureSepolia();
-              await detectPrimaryEnsFromWallet(wallet);
-              setFlowMessage('Wallet connected on Sepolia.');
-            } catch (error) {
-              setLocalError(error instanceof Error ? error.message : 'Could not connect wallet.');
-              setFlowMessage('Connection failed.');
-            }
-          }}
-          disabled={isBusy}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          {walletAddress ? 'Wallet Connected' : 'Connect Wallet'}
-        </button>
-        <span className="text-xs text-zinc-600 dark:text-zinc-400">
-          {walletAddress || 'No wallet connected'}
-        </span>
+      <div className="mt-4 space-y-3">
+        {wallets.length > 1 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-zinc-600 dark:text-zinc-400">Wallet:</span>
+            {wallets.map((wallet) => (
+              <button
+                key={wallet.info.rdns}
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  setSelectedWalletRdns(wallet.info.rdns);
+                  setWalletAddress('');
+                  setSourceEnsName('');
+                  setOwnershipStatus('idle');
+                  setOwnershipMessage('');
+                  setVerifiedIdentityKey('');
+                  lastAutoVerifyKeyRef.current = '';
+                  setFlowMessage(`Selected ${wallet.info.name}. Click Connect Wallet.`);
+                }}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  activeWallet?.info.rdns === wallet.info.rdns
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    : 'border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900'
+                }`}
+              >
+                {wallet.info.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                setLocalError('');
+                setFlowMessage('Connecting wallet...');
+                await connectWallet();
+                await ensureSepolia();
+              } catch (error) {
+                setLocalError(error instanceof Error ? error.message : 'Could not connect wallet.');
+                setFlowMessage('Connection failed.');
+              }
+            }}
+            disabled={isBusy}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            {walletAddress ? 'Wallet Connected' : 'Connect Wallet'}
+          </button>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={async () => {
+              try {
+                setLocalError('');
+                setFlowMessage('Choose the account to use in your wallet...');
+                const provider = getProvider();
+                await provider.request({
+                  method: 'wallet_requestPermissions',
+                  params: [{ eth_accounts: {} }],
+                });
+                await connectWallet();
+                await ensureSepolia();
+              } catch (error) {
+                setLocalError(error instanceof Error ? error.message : 'Could not switch account.');
+                setFlowMessage('Account switch cancelled.');
+              }
+            }}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            Switch Account
+          </button>
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">
+            {walletAddress
+              ? `${activeWallet?.info.name ? `${activeWallet.info.name}: ` : ''}${walletAddress}`
+              : 'No wallet connected'}
+          </span>
+        </div>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">

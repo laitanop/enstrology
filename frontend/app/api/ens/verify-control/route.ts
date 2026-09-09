@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http, isAddress } from 'viem';
 import { sepolia } from 'viem/chains';
+import { isEnsV2Owner } from '@/lib/ens-v2';
 
 export const runtime = 'nodejs';
 
@@ -40,14 +41,17 @@ export async function GET(request: NextRequest) {
 
     const resolvedAddress = await publicClient.getEnsAddress({ name: source });
     if (!resolvedAddress) {
+      // ENSv2 names resolve to nothing until records are set, so fall back to registry ownership.
+      const isOwner = await isEnsV2Owner(source, wallet);
       return NextResponse.json({
-        verified: false,
+        verified: isOwner,
         sourceType: 'ens',
         source,
         wallet,
         resolvedAddress: null,
-        reason:
-          'This ENS name has no address record on Sepolia. Set an address record first, or use your wallet address as source.',
+        reason: isOwner
+          ? 'Connected wallet owns this name in the ENSv2 registry on Sepolia'
+          : 'This ENS name has no address record on Sepolia and is not owned by this wallet. Set an address record first, or use your wallet address as source.',
       });
     }
 
