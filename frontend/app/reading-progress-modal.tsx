@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { friendlyFlowError } from "@/lib/flow-error";
+import OracleSpinner from "./oracle-spinner";
 
 export type ReadingProgressStep =
   | "prepare"
@@ -35,6 +37,39 @@ function sepoliaTxUrl(hash: string): string {
   return `https://sepolia.etherscan.io/tx/${hash}`;
 }
 
+function ErrorBox({
+  raw,
+  failedLabel,
+}: {
+  raw: string;
+  failedLabel: string;
+}) {
+  const friendly = friendlyFlowError(raw);
+  const showDetails = Boolean(raw) && raw.trim() !== friendly;
+
+  return (
+    <div className="mt-4 w-full rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-left">
+      <p className="text-xs font-medium tracking-wide text-rose-300/80 uppercase">
+        Stopped at {failedLabel}
+      </p>
+      <p className="mt-1 text-sm leading-6 text-rose-50">{friendly}</p>
+      <p className="mt-2 text-xs leading-5 text-rose-200/70">
+        Close this window and tap Reveal to try again.
+      </p>
+      {showDetails ? (
+        <details className="mt-3 border-t border-rose-400/15 pt-2">
+          <summary className="cursor-pointer text-xs text-rose-200/80">
+            Technical details
+          </summary>
+          <p className="mt-2 max-h-24 overflow-auto text-xs leading-5 break-words text-rose-100/60">
+            {raw}
+          </p>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 function shortHash(hash: string): string {
   if (hash.length < 12) {
     return hash;
@@ -46,7 +81,7 @@ function stepStatus(
   stepId: ReadingProgressStep,
   current: ReadingProgressStep,
   status: ReadingProgressStatus,
-): "done" | "active" | "wait" {
+): "done" | "active" | "failed" | "wait" {
   const currentIndex = STEPS.findIndex((item) => item.id === current);
   const stepIndex = STEPS.findIndex((item) => item.id === stepId);
   if (status === "success") {
@@ -56,18 +91,9 @@ function stepStatus(
     return "done";
   }
   if (stepIndex === currentIndex) {
-    return "active";
+    return status === "error" ? "failed" : "active";
   }
   return "wait";
-}
-
-function Spinner() {
-  return (
-    <span
-      className="inline-block size-10 animate-spin rounded-full border-2 border-violet-300/25 border-t-[#C4B5FD] motion-reduce:animate-none"
-      aria-hidden
-    />
-  );
 }
 
 export default function ReadingProgressModal({
@@ -129,41 +155,46 @@ export default function ReadingProgressModal({
       aria-busy={!canClose}
     >
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="relative w-full max-w-md rounded-[28px] border border-white/10 bg-[#141022] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)] sm:p-7">
-        <div className="flex items-start gap-4">
+      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/10 bg-[#141022] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)] sm:p-7">
+        <div className="flex flex-col items-center text-center">
           {status === "success" ? (
             <span
-              className="mt-0.5 flex size-10 items-center justify-center rounded-full bg-emerald-500/15 text-lg text-emerald-300"
+              className="flex size-16 items-center justify-center rounded-full bg-emerald-500/15 text-2xl text-emerald-300"
               aria-hidden
             >
               ✓
             </span>
           ) : status === "error" ? (
             <span
-              className="mt-0.5 flex size-10 items-center justify-center rounded-full bg-rose-500/15 text-lg text-rose-300"
+              className="flex size-16 items-center justify-center rounded-full bg-rose-500/15 text-2xl text-rose-300"
               aria-hidden
             >
               !
             </span>
           ) : (
-            <Spinner />
+            <OracleSpinner className="h-28 w-auto" />
           )}
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="font-display text-2xl text-white">
-              {status === "success"
-                ? "Reading is ready"
-                : status === "error"
-                  ? "Could not finish"
-                  : "Revealing your ENStrology"}
-            </h2>
+          <h2 id={titleId} className="font-display mt-4 text-2xl text-white">
+            {status === "success"
+              ? "Reading is ready"
+              : status === "error"
+                ? "Could not finish"
+                : "Revealing your ENStrology"}
+          </h2>
+          {status !== "error" ? (
             <p className="mt-1 text-sm leading-6 text-zinc-400">
               {status === "success"
                 ? "Close this window to see your new post in the Cosmic Feed."
-                : status === "error"
-                  ? errorMessage || message || "Something went wrong."
-                  : message || "Please confirm in your wallet…"}
+                : message || "Please confirm in your wallet…"}
             </p>
-          </div>
+          ) : (
+            <ErrorBox
+              raw={errorMessage || message}
+              failedLabel={
+                STEPS.find((item) => item.id === step)?.label || "This step"
+              }
+            />
+          )}
         </div>
 
         <ol className="mt-6 space-y-3">
@@ -175,22 +206,30 @@ export default function ReadingProgressModal({
                   className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
                     itemStatus === "done"
                       ? "bg-emerald-500/20 text-emerald-300"
-                      : itemStatus === "active"
-                        ? "bg-violet-400/20 text-violet-200"
-                        : "bg-white/5 text-zinc-500"
+                      : itemStatus === "failed"
+                        ? "bg-rose-500/20 text-rose-300"
+                        : itemStatus === "active"
+                          ? "bg-violet-400/20 text-violet-200"
+                          : "bg-white/5 text-zinc-500"
                   }`}
                   aria-hidden
                 >
                   {itemStatus === "done"
                     ? "✓"
-                    : itemStatus === "active"
-                      ? "●"
-                      : ""}
+                    : itemStatus === "failed"
+                      ? "×"
+                      : itemStatus === "active"
+                        ? "●"
+                        : ""}
                 </span>
                 <div className="min-w-0">
                   <p
                     className={
-                      itemStatus === "wait" ? "text-zinc-500" : "text-zinc-100"
+                      itemStatus === "failed"
+                        ? "text-rose-200"
+                        : itemStatus === "wait"
+                          ? "text-zinc-500"
+                          : "text-zinc-100"
                     }
                   >
                     {item.label}

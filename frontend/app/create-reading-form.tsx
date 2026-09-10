@@ -16,6 +16,7 @@ import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
 import type { FeedCard } from "@/lib/feed";
+import { friendlyFlowError } from "@/lib/flow-error";
 import { announceNewReading } from "./home-feed-list";
 import ReadingProgressModal, {
   type ReadingProgressStatus,
@@ -855,8 +856,8 @@ export default function CreateReadingForm({
       </form>
 
       {localError && !progressOpen ? (
-        <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {localError}
+        <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {friendlyFlowError(localError)}
         </div>
       ) : null}
 
