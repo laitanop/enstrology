@@ -21,7 +21,7 @@ export default async function CosmicFeedPage() {
       <main className="mx-auto w-full max-w-3xl">
         <h1 className="text-2xl font-semibold tracking-tight">Cosmic Feed</h1>
         <p className="mt-2 text-sm text-zinc-300">
-          Public horoscopes from ENS names. Anyone can read these. Private readings stay hidden.
+          Horoscopes from ENS names. Anyone can read these.
         </p>
 
         {loadError ? (
@@ -32,7 +32,7 @@ export default async function CosmicFeedPage() {
 
         {!loadError && cards.length === 0 ? (
           <div className="mt-6 rounded-xl border border-white/15 bg-white/90 p-6 text-sm text-zinc-700 backdrop-blur-md">
-            No public readings yet. Create a horoscope and set visibility to public.
+            No public readings yet. Create a horoscope to appear here.
           </div>
         ) : null}
 

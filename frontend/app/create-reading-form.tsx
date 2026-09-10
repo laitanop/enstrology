@@ -188,7 +188,6 @@ export default function CreateReadingForm({
   const [sourceEnsName, setSourceEnsName] = useState<string>("");
   const [birthdate, setBirthdate] = useState<string>("");
   const [birthdaySource, setBirthdaySource] = useState<string>("");
-  const [visibility, setVisibility] = useState<"private" | "public">("private");
   const [localError, setLocalError] = useState<string>("");
   const [flowMessage, setFlowMessage] = useState<string>(
     "Connect wallet to start.",
@@ -624,18 +623,16 @@ export default function CreateReadingForm({
       setPurchaseTxHash(purchaseHash);
       await publicClient.waitForTransactionReceipt({ hash: purchaseHash });
 
-      if (visibility === "public") {
-        setFlowMessage("Setting visibility to public...");
-        const visibilityHash = await walletClient.writeContract({
-          account: connectedWallet,
-          address: PAY_ADDRESS,
-          abi: ENSTROLOGY_PAY_ABI,
-          functionName: "setReadingPublished",
-          args: [readingNamehash, true],
-        });
-        setVisibilityTxHash(visibilityHash);
-        await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
-      }
+      setFlowMessage("Sharing reading on Cosmic Feed...");
+      const visibilityHash = await walletClient.writeContract({
+        account: connectedWallet,
+        address: PAY_ADDRESS,
+        abi: ENSTROLOGY_PAY_ABI,
+        functionName: "setReadingPublished",
+        args: [readingNamehash, true],
+      });
+      setVisibilityTxHash(visibilityHash);
+      await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
 
       setFlowMessage(
         "Payment complete. Generating horoscope and writing ENS text records...",
@@ -644,7 +641,7 @@ export default function CreateReadingForm({
       formData.set("sourceEnsName", normalizedEns);
       formData.set("birthdate", birthdate);
       formData.set("readingNamehash", readingNamehash);
-      formData.set("visibility", visibility);
+      formData.set("visibility", "public");
 
       startDispatchTransition(() => {
         formAction(formData);
@@ -785,17 +782,6 @@ export default function CreateReadingForm({
             <p className="mt-1 text-sm text-zinc-500">
               Demo token · Sepolia testnet
             </p>
-            <label className="mt-3 flex items-center gap-2 text-sm text-zinc-400">
-              <input
-                type="checkbox"
-                checked={visibility === "public"}
-                onChange={(event) =>
-                  setVisibility(event.target.checked ? "public" : "private")
-                }
-                className="h-4 w-4 rounded border-white/20 bg-transparent"
-              />
-              Share on Cosmic Feed
-            </label>
           </div>
           <button
             type="submit"

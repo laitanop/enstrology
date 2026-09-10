@@ -52,7 +52,7 @@ async function createReadingAction(
     .toLowerCase();
   const birthdate = String(formData.get('birthdate') || '').trim();
   const readingNamehash = String(formData.get('readingNamehash') || '').trim();
-  const visibility = String(formData.get('visibility') || 'private').trim();
+  const visibility = String(formData.get('visibility') || 'public').trim();
 
   if (!sourceEnsName || !birthdate || !readingNamehash) {
     return { status: 'error', message: 'Missing required fields.' };
