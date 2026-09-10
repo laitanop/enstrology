@@ -9,6 +9,7 @@ import CreateReadingForm, {
   type CreateReadingState,
   type PermissionProofResult,
 } from './create-reading-form';
+import SiteNav from './site-nav';
 
 const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
@@ -25,6 +26,19 @@ function getErrorMessage(error: unknown): string {
 
 function normalizeEnsName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function getCreateReadingErrorMessage(error: unknown): string {
+  if (
+    error instanceof Error &&
+    (error.message.includes('not deployed at') ||
+      error.message.includes('Missing ') ||
+      error.message.includes('does not match') ||
+      error.message.includes('revert'))
+  ) {
+    return error.message;
+  }
+  return 'Unexpected server error while creating reading.';
 }
 
 async function createReadingAction(
@@ -93,6 +107,7 @@ async function createReadingAction(
         luckyColor: string;
         luckyNumber: string;
       };
+      readingEnsName?: string;
       transactions?: Record<string, string>;
     };
 
@@ -115,21 +130,16 @@ async function createReadingAction(
         sourceEnsName,
         birthdate,
         readingNamehash,
+        readingEnsName: responseJson.readingEnsName || '',
         visibility,
         horoscope: responseJson.horoscope,
         transactions: responseJson.transactions,
       },
     };
   } catch (error) {
-    // Keep generic errors by default, but surface config issues for faster setup fixes.
-    const safeMessage =
-      error instanceof Error &&
-      (error.message.includes('not deployed at') || error.message.includes('Missing ENSTROLOGYP_PAY_ADDRESS'))
-        ? error.message
-        : 'Unexpected server error while creating reading.';
     return {
       status: 'error',
-      message: safeMessage,
+      message: getCreateReadingErrorMessage(error),
     };
   }
 }
@@ -263,6 +273,9 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <main className="mx-auto flex w-full max-w-2xl flex-col items-center">
+        <div className="w-full">
+          <SiteNav current="create" />
+        </div>
         <CreateReadingForm
           action={createReadingAction}
           forbiddenWriteAction={forbiddenWriteAction}

@@ -1,4 +1,5 @@
-import { createPublicClient, createWalletClient, http, namehash, parseAbiItem } from 'viem';
+import { createPublicClient, createWalletClient, http, isAddress, namehash, parseAbiItem, zeroAddress } from 'viem';
+import { labelhash } from 'viem/ens';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
 import { OpenRouter } from '@openrouter/sdk';
@@ -8,6 +9,9 @@ const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc
 const ENSTROLOGY_PAY_ADDRESS =
   process.env.ENSTROLOGYP_PAY_ADDRESS || process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS;
 const RESOLVER_ADDRESS = process.env.RESOLVER_ADDRESS || process.env.NEXT_PUBLIC_RESOLVER_ADDRESS;
+const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
+const ENS_V2_ETH_REGISTRY = process.env.ENS_V2_ETH_REGISTRY as `0x${string}` | undefined;
+const THIRTY_DAYS_SECONDS = BigInt(30 * 24 * 60 * 60);
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY;
 const DEFAULT_ORACLE_MODEL = process.env.ORACLE_MODEL || 'anthropic/claude-3.5-sonnet';
@@ -79,6 +83,37 @@ const ENSTROLOGY_PAY_ABI = [
   },
 ] as const;
 
+const REGISTRY_ABI = [
+  {
+    name: 'getSubregistry',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'label', type: 'string' }],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    name: 'ownerOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    name: 'register',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'label', type: 'string' },
+      { name: 'owner', type: 'address' },
+      { name: 'registry', type: 'address' },
+      { name: 'resolver', type: 'address' },
+      { name: 'roleBitmap', type: 'uint256' },
+      { name: 'expiry', type: 'uint64' },
+    ],
+    outputs: [{ name: 'tokenId', type: 'uint256' }],
+  },
+] as const;
+
 const RESOLVER_ROLES_ABI = [
   {
     name: 'revokeRoles',
@@ -133,6 +168,94 @@ function getAppWalletClient() {
     transport: http(SEPOLIA_RPC),
     account: privateKeyToAccount(APP_PRIVATE_KEY as `0x${string}`),
   });
+}
+
+function getRegistryTokenId(label: string): bigint {
+  return (BigInt(labelhash(label)) >> BigInt(32)) << BigInt(32);
+}
+
+export function getReadingEnsName(sourceEnsName: string, birthdateISO: string): string {
+  const sourceLabel = sourceEnsName.trim().toLowerCase().split('.')[0] || 'reading';
+  const compactDate = birthdateISO.replaceAll('-', '');
+  return `${sourceLabel}-${compactDate}.${ORACLE_ENS_NAME}`;
+}
+
+export async function resolveOracleSubregistry(): Promise<`0x${string}`> {
+  const fromEnv = process.env.ORACLE_SUBREGISTRY_ADDRESS?.trim();
+  if (fromEnv && isAddress(fromEnv)) {
+    return fromEnv as `0x${string}`;
+  }
+
+  if (!ENS_V2_ETH_REGISTRY) {
+    throw new Error('Missing ORACLE_SUBREGISTRY_ADDRESS');
+  }
+
+  const parentLabels = ORACLE_ENS_NAME.split('.').slice(0, -1).reverse();
+  let registry = ENS_V2_ETH_REGISTRY;
+  for (const label of parentLabels) {
+    registry = await publicClient.readContract({
+      address: registry,
+      abi: REGISTRY_ABI,
+      functionName: 'getSubregistry',
+      args: [label],
+    });
+    if (registry.toLowerCase() === ZERO_ADDRESS) {
+      throw new Error(`Missing subregistry while resolving ${ORACLE_ENS_NAME}`);
+    }
+  }
+
+  return registry;
+}
+
+export async function registerReadingSubname(input: {
+  sourceEnsName: string;
+  birthdateISO: string;
+  readingNamehash: `0x${string}`;
+  owner: `0x${string}`;
+}): Promise<{ readingEnsName: string; registerTxHash?: `0x${string}` }> {
+  const readingEnsName = getReadingEnsName(input.sourceEnsName, input.birthdateISO);
+  const expectedNamehash = namehash(readingEnsName);
+  if (expectedNamehash.toLowerCase() !== input.readingNamehash.toLowerCase()) {
+    throw new Error('readingNamehash does not match sourceEnsName and birthdate');
+  }
+
+  if (!RESOLVER_ADDRESS) {
+    throw new Error('Missing RESOLVER_ADDRESS');
+  }
+
+  const subregistry = await resolveOracleSubregistry();
+  await assertContractDeployed(subregistry, 'Oracle subregistry');
+
+  const label = readingEnsName.split('.')[0];
+  const existingOwner = await publicClient.readContract({
+    address: subregistry,
+    abi: REGISTRY_ABI,
+    functionName: 'ownerOf',
+    args: [getRegistryTokenId(label)],
+  });
+
+  if (existingOwner.toLowerCase() !== ZERO_ADDRESS) {
+    return { readingEnsName };
+  }
+
+  const expiry = BigInt(Math.floor(Date.now() / 1000)) + THIRTY_DAYS_SECONDS;
+  const appWalletClient = getAppWalletClient();
+  const hash = await appWalletClient.writeContract({
+    address: subregistry,
+    abi: REGISTRY_ABI,
+    functionName: 'register',
+    args: [
+      label,
+      input.owner,
+      zeroAddress,
+      RESOLVER_ADDRESS as `0x${string}`,
+      BigInt(0),
+      expiry,
+    ],
+  });
+
+  await publicClient.waitForTransactionReceipt({ hash });
+  return { readingEnsName, registerTxHash: hash };
 }
 
 export function computeSourceNamehash(sourceEnsName: string): `0x${string}` {

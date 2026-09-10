@@ -28,6 +28,7 @@ export type CreateReadingState = {
     sourceEnsName: string;
     birthdate: string;
     readingNamehash: string;
+    readingEnsName?: string;
     visibility: 'private' | 'public';
     horoscope: Horoscope;
     transactions: Record<string, string>;
@@ -968,6 +969,19 @@ export default function CreateReadingForm({
           <p>
             <span className="font-medium">Reading:</span> {state.result.readingNamehash}
           </p>
+          {state.result.readingEnsName ? (
+            <p>
+              <span className="font-medium">Reading name:</span>{' '}
+              <a
+                href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                {state.result.readingEnsName}
+              </a>
+            </p>
+          ) : null}
           <p>
             <span className="font-medium">Visibility:</span> {state.result.visibility}
           </p>

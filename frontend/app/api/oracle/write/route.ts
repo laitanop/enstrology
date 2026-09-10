@@ -3,6 +3,7 @@ import {
   generateHoroscope,
   getReadingRecord,
   publishHoroscope,
+  registerReadingSubname,
   ZERO_ADDRESS,
 } from '@/lib/oracle';
 import { NextRequest, NextResponse } from 'next/server';
@@ -140,19 +141,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('Registering reading subname under oracle.enstrology.eth');
+    const registration = await registerReadingSubname({
+      sourceEnsName: normalizedEnsName,
+      birthdateISO: birthdate,
+      readingNamehash: readingNamehash as `0x${string}`,
+      owner: reading.buyer,
+    });
+
     console.log('Generating horoscope for purchased reading');
     const horoscope = await generateHoroscope(normalizedEnsName, birthdate);
 
     console.log('Publishing horoscope to purchased reading');
     const txHashes = await publishHoroscope(readingNamehash as `0x${string}`, horoscope);
+    if (registration.registerTxHash) {
+      txHashes.register = registration.registerTxHash;
+    }
 
     return NextResponse.json({
       success: true,
+      readingEnsName: registration.readingEnsName,
       horoscope,
       transactions: txHashes,
     });
   } catch (error) {
     console.error('Error:', error);
+    const message = error instanceof Error ? error.message : '';
+    if (
+      message.includes('Missing ') ||
+      message.includes('not deployed') ||
+      message.includes('does not match') ||
+      message.includes('revert')
+    ) {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

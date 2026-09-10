@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getEnsV2RegistrationBirthday } from '@/lib/ens-v2';
 
 export const runtime = 'nodejs';
 
@@ -47,6 +48,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid ENS label' }, { status: 400 });
     }
 
+    const sepoliaBirthday = await getEnsV2RegistrationBirthday(ensName);
+    if (sepoliaBirthday) {
+      return NextResponse.json({
+        ensName,
+        birthdateISO: sepoliaBirthday.birthdateISO,
+        registrationDateUnix: sepoliaBirthday.registrationDateUnix,
+        source: 'ensv2-sepolia',
+      });
+    }
+
     const query = `
       query GetRegistrations($label: String!) {
         registrations(
@@ -81,7 +92,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           {
             error:
-              'ENS subgraph rate limit reached. Set THE_GRAPH_API_KEY in frontend/.env.local for reliable birthday detection.',
+              'Could not detect this name on Sepolia, and the mainnet ENS birthday service is busy. Type the date manually (YYYY-MM-DD) and continue.',
           },
           { status: 429 }
         );
