@@ -10,12 +10,12 @@ const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 type ReadingPageProps = {
   params: Promise<{ readingNamehash: string }>;
-  searchParams: Promise<{ ens?: string }>;
+  searchParams: Promise<{ ens?: string; pay?: string }>;
 };
 
 export default async function ReadingPage({ params, searchParams }: ReadingPageProps) {
   const { readingNamehash } = await params;
-  const { ens } = await searchParams;
+  const { ens, pay } = await searchParams;
   if (!READING_NAMEHASH_REGEX.test(readingNamehash)) {
     notFound();
   }
@@ -23,6 +23,7 @@ export default async function ReadingPage({ params, searchParams }: ReadingPageP
   const card = await getPublishedReading(
     readingNamehash as `0x${string}`,
     ens,
+    pay,
   );
   if (!card) {
     notFound();

@@ -14,6 +14,7 @@ import {
 import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
+import { formatLuckyColorName } from "@/lib/reading-display";
 
 type Horoscope = {
   sign: string;
@@ -931,7 +932,7 @@ export default function CreateReadingForm({
             {state.result.horoscope.reading}
           </p>
           <p className="text-zinc-500">
-            Lucky color {state.result.horoscope.luckyColor} · Lucky number{" "}
+            Lucky color {formatLuckyColorName(state.result.horoscope.luckyColor)} · Lucky number{" "}
             {state.result.horoscope.luckyNumber}
           </p>
           <ul className="space-y-1 text-xs text-zinc-500">

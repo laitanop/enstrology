@@ -1,25 +1,79 @@
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { useAccount } from 'wagmi';
-import type { FeedCard } from '@/lib/feed';
+import { useState, useTransition } from "react";
+import type { FeedCard } from "@/lib/feed";
 import {
   formatLongBirthdate,
+  formatLuckyColorName,
   luckyColorSwatch,
   shortAddress,
-} from '@/lib/reading-display';
-import { revokeReadingOracleAction } from './actions';
+} from "@/lib/reading-display";
+import { revokeReadingOracleAction } from "./actions";
 
-const ORACLE_ENS_NAME = 'oracle.enstrology.eth';
+const ORACLE_ENS_NAME = "oracle.enstrology.eth";
 
 type ReadingDetailProps = {
   card: FeedCard;
 };
 
+function ClockIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 4.6V8.2L10.4 9.6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x="3.4"
+        y="7.2"
+        width="9.2"
+        height="6.2"
+        rx="1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M5.4 7.2V5.6a2.6 2.6 0 0 1 5.2 0v1.6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function ConstellationMark() {
   return (
     <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
-      <circle cx="36" cy="36" r="34" fill="#120c24" stroke="rgba(255,255,255,0.12)" />
+      <circle
+        cx="36"
+        cy="36"
+        r="34"
+        fill="#120c24"
+        stroke="rgba(255,255,255,0.12)"
+      />
       <circle cx="22" cy="24" r="2.2" fill="#E8C56A" />
       <circle cx="38" cy="18" r="2.2" fill="#E8C56A" />
       <circle cx="52" cy="28" r="2.2" fill="#E8C56A" />
@@ -36,21 +90,18 @@ function ConstellationMark() {
 }
 
 export default function ReadingDetail({ card }: ReadingDetailProps) {
-  const { address } = useAccount();
   const [isPending, startTransition] = useTransition();
-  const [revokeMessage, setRevokeMessage] = useState('');
-  const isBuyer =
-    Boolean(address) && address?.toLowerCase() === card.buyer.toLowerCase();
+  const [revokeMessage, setRevokeMessage] = useState("");
   const explorerUrl = card.readingEnsName
     ? `https://explorer.ens.dev/${card.readingEnsName}`
-    : '';
+    : "";
   const paymentUrl = card.paymentTxHash
     ? `https://sepolia.etherscan.io/tx/${card.paymentTxHash}`
-    : '';
+    : "";
 
   const onRevoke = (): void => {
     if (!card.readingEnsName) {
-      setRevokeMessage('This reading has no ENS name to revoke.');
+      setRevokeMessage("This reading has no ENS name to revoke.");
       return;
     }
     startTransition(async () => {
@@ -83,11 +134,13 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
           <ConstellationMark />
           <div>
             <p className="text-[11px] font-semibold tracking-[0.16em] text-[#E8C56A] uppercase">
-              {card.sign || 'Sign'}
-              {card.birthdate ? ` · Born onchain ${formatLongBirthdate(card.birthdate)}` : ''}
+              {card.sign || "Sign"}
+              {card.birthdate
+                ? ` · Born onchain ${formatLongBirthdate(card.birthdate)}`
+                : ""}
             </p>
             <h1 className="font-display mt-2 text-3xl text-white sm:text-4xl">
-              {card.title || 'Untitled reading'}
+              {card.title || "Untitled reading"}
             </h1>
           </div>
         </div>
@@ -107,7 +160,7 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
                   className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: luckyColorSwatch(card.luckyColor) }}
                 />
-                {card.luckyColor}
+                {formatLuckyColorName(card.luckyColor)}
               </p>
             </div>
           ) : null}
@@ -123,15 +176,6 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
       </section>
 
       <aside className="space-y-4">
-        <div className="flex justify-center lg:justify-end">
-          <img
-            src="/images/oracle.svg"
-            alt="The ENStrology Oracle"
-            width={220}
-            height={318}
-            className="h-44 w-auto drop-shadow-[0_24px_40px_rgba(12,8,32,0.65)] sm:h-52 lg:h-56"
-          />
-        </div>
         <section className="rounded-[28px] border border-white/10 bg-[#141022]/85 p-5">
           <p className="flex items-center gap-2 text-sm font-medium text-emerald-300">
             <span aria-hidden="true">✓</span>
@@ -145,12 +189,15 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
             <div className="flex items-start justify-between gap-3">
               <dt className="text-zinc-500">ENS birthday</dt>
               <dd className="text-right text-white">
-                {card.birthdate ? formatLongBirthdate(card.birthdate) : '—'}
+                {card.birthdate ? formatLongBirthdate(card.birthdate) : "—"}
               </dd>
             </div>
             <div className="flex items-start justify-between gap-3">
               <dt className="text-zinc-500">Owner</dt>
-              <dd className="text-right font-mono text-xs text-white">
+              <dd
+                className="cursor-help text-right font-mono text-xs text-white"
+                title={card.buyer}
+              >
                 {shortAddress(card.buyer)}
               </dd>
             </div>
@@ -164,7 +211,7 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
                     rel="noreferrer"
                     className="font-mono text-xs text-violet-300 underline"
                   >
-                    {shortAddress(card.paymentTxHash || '')}
+                    {shortAddress(card.paymentTxHash || "")}
                   </a>
                 ) : (
                   <span className="text-white">Onchain</span>
@@ -175,34 +222,64 @@ export default function ReadingDetail({ card }: ReadingDetailProps) {
         </section>
 
         <section className="rounded-[28px] border border-white/10 bg-[#141022]/85 p-5">
-          <p className="text-sm font-medium text-white">Your reading lives at</p>
+          <p className="text-sm font-medium text-white">
+            Your reading lives at
+          </p>
           {card.readingEnsName ? (
             <a
               href={explorerUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-3 block break-all rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-3 text-sm text-violet-200"
+              className="mt-3 block break-all rounded-md border border-white/10 bg-[#16111F] px-4 py-3 text-sm text-[#C4B5FD] hover:text-[#d4c8ff]"
             >
               {card.readingEnsName}
             </a>
           ) : (
-            <p className="mt-3 text-sm text-zinc-500">ENS name still indexing.</p>
+            <p className="mt-3 text-sm text-zinc-500">
+              ENS name still indexing.
+            </p>
           )}
-          <ul className="mt-4 space-y-2 text-sm text-zinc-400">
-            <li>Expires {formatLongBirthdate(card.expiresAt.slice(0, 10))}</li>
-            <li>Non-transferable — yours alone</li>
-            <li>Oracle may edit horoscope records only</li>
+          <ul className="mt-4 space-y-3 text-sm text-[#A8A0BF]">
+            <li className="flex items-start gap-2.5">
+              <span className="mt-0.5 text-[#E8C56A]">
+                <ClockIcon />
+              </span>
+              <span>
+                Expires {formatLongBirthdate(card.expiresAt.slice(0, 10))}
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="mt-0.5 text-[#E8C56A]">
+                <LockIcon />
+              </span>
+              <span>Non-transferable — yours alone</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="mt-0.5">
+                <img
+                  src="/images/logo.svg"
+                  alt=""
+                  width={16}
+                  height={11}
+                  className="h-4 w-auto"
+                />
+              </span>
+              <span>Oracle may edit horoscope records only</span>
+            </li>
           </ul>
-          {isBuyer ? (
+          <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[#A8A0BF]">
+              Not happy with your Oracle?
+            </p>
             <button
               type="button"
               onClick={onRevoke}
               disabled={isPending}
-              className="mt-5 min-h-11 w-full rounded-2xl border border-rose-400/30 text-sm font-medium text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-60"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#EC8B57]/50 px-4 text-sm font-medium text-[#F75B06] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isPending ? 'Revoking...' : 'Revoke its access'}
+              {isPending ? "Revoking..." : "Revoke its access"}
             </button>
-          ) : null}
+          </div>
           {revokeMessage ? (
             <p className="mt-2 text-xs text-zinc-500">{revokeMessage}</p>
           ) : null}

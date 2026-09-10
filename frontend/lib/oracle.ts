@@ -1,3 +1,4 @@
+import { formatLuckyColorName } from '@/lib/reading-display';
 import { createPublicClient, createWalletClient, http, isAddress, namehash, parseAbiItem, zeroAddress } from 'viem';
 import { labelhash } from 'viem/ens';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -409,6 +410,47 @@ export async function getPurchasedReadings(
     .filter((event): event is PurchasedReadingEvent => event !== null);
 }
 
+export async function getPurchaseTransactionHash(
+  readingNamehash: `0x${string}`,
+  lookbackBlocks = BigInt(process.env.FEED_LOOKBACK_BLOCKS || '40000')
+): Promise<`0x${string}` | null> {
+  if (!ENSTROLOGY_PAY_ADDRESS) {
+    return null;
+  }
+
+  const latestBlock = await publicClient.getBlockNumber();
+  const earliestBlock = latestBlock > lookbackBlocks ? latestBlock - lookbackBlocks : BigInt(0);
+  let chunkSize = MAX_LOG_BLOCK_RANGE < BigInt(1) ? BigInt(1) : MAX_LOG_BLOCK_RANGE;
+
+  for (let toBlock = latestBlock; toBlock > earliestBlock; toBlock -= chunkSize) {
+    const fromBlock =
+      toBlock > earliestBlock + chunkSize ? toBlock - chunkSize + BigInt(1) : earliestBlock;
+    try {
+      const logs = await publicClient.getLogs({
+        address: ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
+        event: READING_PURCHASED_EVENT,
+        args: { readingNamehash },
+        fromBlock,
+        toBlock,
+      });
+      const match = [...logs].reverse().find((log) => log.transactionHash);
+      if (match?.transactionHash) {
+        return match.transactionHash;
+      }
+    } catch (error) {
+      if (chunkSize > BigInt(250) && isRpcRangeError(error)) {
+        chunkSize /= BigInt(2);
+        toBlock += chunkSize;
+        await sleep(250);
+        continue;
+      }
+    }
+    await sleep(40);
+  }
+
+  return null;
+}
+
 // Helper: Write text record to resolver
 export async function writeTextRecord(
   namehash: `0x${string}`,
@@ -479,14 +521,21 @@ function extractAssistantText(
 
 function parseHoroscopeJson(rawText: string): Horoscope {
   try {
-    return HOROSCOPE_SCHEMA.parse(JSON.parse(rawText));
+    return normalizeHoroscope(HOROSCOPE_SCHEMA.parse(JSON.parse(rawText)));
   } catch {
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error('Could not parse horoscope JSON');
     }
-    return HOROSCOPE_SCHEMA.parse(JSON.parse(jsonMatch[0]));
+    return normalizeHoroscope(HOROSCOPE_SCHEMA.parse(JSON.parse(jsonMatch[0])));
   }
+}
+
+function normalizeHoroscope(horoscope: Horoscope): Horoscope {
+  return {
+    ...horoscope,
+    luckyColor: formatLuckyColorName(horoscope.luckyColor),
+  };
 }
 
 // Generate horoscope using Claude AI via OpenRouter
@@ -530,7 +579,7 @@ export async function generateHoroscope(
         {
           role: 'system',
           content:
-            'You are ENStrology Oracle. Return only valid JSON matching the requested schema. Keep content fun, positive, and entertainment-focused.',
+            'You are ENStrology Oracle. Return only valid JSON matching the requested schema. Keep content fun, positive, and entertainment-focused. luckyColor must be a color name in words only, such as Electric violet or Soft gold — never a hex code, rgb value, or number.',
         },
         {
           role: 'user',

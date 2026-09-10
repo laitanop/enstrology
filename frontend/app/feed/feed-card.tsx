@@ -11,6 +11,9 @@ export default function FeedCardLink({ card }: FeedCardLinkProps) {
   if (card.readingEnsName) {
     params.set("ens", card.readingEnsName);
   }
+  if (card.paymentTxHash) {
+    params.set("pay", card.paymentTxHash);
+  }
   const query = params.toString();
   const href = `/feed/${card.readingNamehash}${query ? `?${query}` : ""}`;
 

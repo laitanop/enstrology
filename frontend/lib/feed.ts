@@ -1,6 +1,7 @@
 import { namehash, parseAbiItem } from 'viem';
 import {
   getPurchasedReadings,
+  getPurchaseTransactionHash,
   getReadingRecord,
   publicClient,
   resolveOracleSubregistry,
@@ -162,13 +163,22 @@ export async function listPublishedReadings(): Promise<FeedCard[]> {
 
 export async function getPublishedReading(
   readingNamehash: `0x${string}`,
-  readingEnsNameHint?: string
+  readingEnsNameHint?: string,
+  paymentTxHint?: string
 ): Promise<FeedCard | null> {
+  const hintedPayment =
+    paymentTxHint && /^0x[a-fA-F0-9]{64}$/.test(paymentTxHint)
+      ? (paymentTxHint as `0x${string}`)
+      : null;
+
   const cached = feedCache?.cards.find(
     (card) => card.readingNamehash.toLowerCase() === readingNamehash.toLowerCase()
   );
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      paymentTxHash: hintedPayment || cached.paymentTxHash,
+    };
   }
 
   const record = await getReadingRecord(readingNamehash);
@@ -185,12 +195,15 @@ export async function getPublishedReading(
       ? hintedName
       : '';
 
+  const paymentTxHash =
+    hintedPayment || (await getPurchaseTransactionHash(readingNamehash));
+
   return toFeedCard(
     {
       readingNamehash,
       buyer: record.buyer,
       purchasedAt: record.purchasedAt,
-      paymentTxHash: null,
+      paymentTxHash,
     },
     readingEnsName
   );
