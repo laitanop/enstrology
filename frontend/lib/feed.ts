@@ -12,6 +12,10 @@ const RESOLVER_ADDRESS = (process.env.RESOLVER_ADDRESS ||
 const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
 const FEED_CACHE_MS = 180_000;
 let feedCache: { at: number; cards: FeedCard[] } | null = null;
+
+export function invalidateFeedCache(): void {
+  feedCache = null;
+}
 const FEED_LOOKBACK_BLOCKS = BigInt(process.env.FEED_LOOKBACK_BLOCKS || '12000');
 const FEED_MAX_ITEMS = Number(process.env.FEED_MAX_ITEMS || '24');
 const FEED_LOG_CHUNK = BigInt(process.env.FEED_LOG_CHUNK || '2000');

@@ -11,10 +11,16 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
-import { formatLuckyColorName } from "@/lib/reading-display";
+import type { FeedCard } from "@/lib/feed";
+import { announceNewReading } from "./home-feed-list";
+import ReadingProgressModal, {
+  type ReadingProgressStatus,
+  type ReadingProgressStep,
+} from "./reading-progress-modal";
 
 type Horoscope = {
   sign: string;
@@ -215,16 +221,6 @@ function getZodiacSign(dateISO: string): string | null {
   return "Pisces";
 }
 
-function birthdaySourceLabel(source: string): string {
-  if (source === "ens-subgraph") {
-    return "Verified from the mainnet registration event";
-  }
-  if (source === "ensv2-sepolia") {
-    return "Verified from the Sepolia registration event";
-  }
-  return "Verified from the onchain registration event";
-}
-
 function getReadingEnsName(sourceEnsName: string, birthdate: string): string {
   const sourceLabel = sourceEnsName.split(".")[0] || "reading";
   const compactDate = dateToCompact(birthdate);
@@ -255,6 +251,13 @@ export default function CreateReadingForm({
   const [purchaseTxHash, setPurchaseTxHash] = useState<string>("");
   const [visibilityTxHash, setVisibilityTxHash] = useState<string>("");
   const [isPaying, setIsPaying] = useState<boolean>(false);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressStatus, setProgressStatus] =
+    useState<ReadingProgressStatus>("running");
+  const [progressStep, setProgressStep] =
+    useState<ReadingProgressStep>("prepare");
+  const [awaitingOracle, setAwaitingOracle] = useState(false);
+  const router = useRouter();
   const [isDetectingEns, setIsDetectingEns] = useState<boolean>(false);
   const [isDetectingBirthday, setIsDetectingBirthday] =
     useState<boolean>(false);
@@ -281,6 +284,7 @@ export default function CreateReadingForm({
     isPending ||
     isPaying ||
     isDispatchPending ||
+    awaitingOracle ||
     isDetectingBirthday ||
     isProofPending;
 
@@ -600,6 +604,10 @@ export default function CreateReadingForm({
     setApproveTxHash("");
     setPurchaseTxHash("");
     setVisibilityTxHash("");
+    setProgressOpen(true);
+    setProgressStatus("running");
+    setProgressStep("prepare");
+    setAwaitingOracle(false);
 
     try {
       if (!isConnected || !walletAddress) {
@@ -615,6 +623,7 @@ export default function CreateReadingForm({
       }
 
       setFlowMessage("Switching to Sepolia...");
+      setProgressStep("prepare");
       await ensureSepolia();
 
       const connectedWallet = walletAddress as `0x${string}`;
@@ -659,6 +668,7 @@ export default function CreateReadingForm({
       }
 
       setFlowMessage("Approving 0.01 demo USDC...");
+      setProgressStep("approve");
       const approveHash = await walletClient.writeContract({
         account: connectedWallet,
         address: DEMO_USDC_ADDRESS,
@@ -669,7 +679,8 @@ export default function CreateReadingForm({
       setApproveTxHash(approveHash);
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
-      setFlowMessage("Paying ENStrology (purchaseReading)...");
+      setFlowMessage("Confirm the payment in your wallet...");
+      setProgressStep("pay");
       const purchaseHash = await walletClient.writeContract({
         account: connectedWallet,
         address: PAY_ADDRESS,
@@ -681,6 +692,7 @@ export default function CreateReadingForm({
       await publicClient.waitForTransactionReceipt({ hash: purchaseHash });
 
       setFlowMessage("Sharing reading on Cosmic Feed...");
+      setProgressStep("publish");
       const visibilityHash = await walletClient.writeContract({
         account: connectedWallet,
         address: PAY_ADDRESS,
@@ -691,27 +703,85 @@ export default function CreateReadingForm({
       setVisibilityTxHash(visibilityHash);
       await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
 
-      setFlowMessage(
-        "Payment complete. Generating horoscope and writing ENS text records...",
-      );
+      setFlowMessage("Payment landed. The Oracle is writing your horoscope...");
+      setProgressStep("create");
       const formData = new FormData();
       formData.set("sourceEnsName", normalizedEns);
       formData.set("birthdate", birthdate);
       formData.set("readingNamehash", readingNamehash);
       formData.set("visibility", "public");
 
+      setAwaitingOracle(true);
       startDispatchTransition(() => {
         formAction(formData);
       });
     } catch (error) {
-      setLocalError(
-        error instanceof Error ? error.message : "Transaction failed.",
-      );
+      const nextError =
+        error instanceof Error ? error.message : "Transaction failed.";
+      setLocalError(nextError);
       setFlowMessage("Flow stopped.");
+      setProgressStatus("error");
     } finally {
       setIsPaying(false);
     }
   };
+
+  useEffect(() => {
+    if (!awaitingOracle || isPending || isDispatchPending) {
+      return;
+    }
+    if (state.status === "success") {
+      setProgressStatus("success");
+      setFlowMessage(state.message || "Horoscope written onchain.");
+      setAwaitingOracle(false);
+      return;
+    }
+    if (state.status === "error") {
+      setProgressStatus("error");
+      setLocalError(state.message);
+      setFlowMessage(state.message || "Horoscope creation failed.");
+      setAwaitingOracle(false);
+    }
+  }, [awaitingOracle, isDispatchPending, isPending, state]);
+
+  const closeProgressModal = useCallback(() => {
+    if (progressStatus === "success" && state.result) {
+      const now = Date.now();
+      const card: FeedCard = {
+        readingNamehash: state.result.readingNamehash as `0x${string}`,
+        readingEnsName: state.result.readingEnsName || readingPreview.readingEnsName,
+        sourceEnsName: state.result.sourceEnsName,
+        birthdate: state.result.birthdate,
+        buyer: (walletAddress as `0x${string}`) || "0x0000000000000000000000000000000000000000",
+        purchasedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        paymentTxHash: purchaseTxHash
+          ? (purchaseTxHash as `0x${string}`)
+          : null,
+        sign: state.result.horoscope.sign,
+        title: state.result.horoscope.title,
+        reading: state.result.horoscope.reading,
+        luckyColor: state.result.horoscope.luckyColor,
+        luckyNumber: state.result.horoscope.luckyNumber,
+      };
+      announceNewReading(card);
+      router.refresh();
+      window.requestAnimationFrame(() => {
+        document.getElementById("feed")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    setProgressOpen(false);
+  }, [
+    progressStatus,
+    purchaseTxHash,
+    readingPreview.readingEnsName,
+    router,
+    state.result,
+    walletAddress,
+  ]);
 
   const submitLabel = isBusy ? "Reading the stars..." : "Reveal my ENStrology";
 
@@ -737,92 +807,36 @@ export default function CreateReadingForm({
         onSubmit={onSubmit}
         className="rounded-[28px] border border-white/10 bg-[#141022]/80 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8"
       >
-        <div className="space-y-2">
-          <div className="relative">
-            <label
-              htmlFor="sourceEnsName"
-              className="text-[11px] font-semibold tracking-[0.16em] text-zinc-500 uppercase"
-            >
-              Your ENS name :{renderENSName()}
-            </label>
-
-            <div className="absolute inset-y-0 right-3 flex items-center">
-              {ownershipStatus === "verified" && (
-                <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-400">
-                  <span aria-hidden="true">✓</span>
-                  You control this name
-                </p>
-              )}
-            </div>
-          </div>
+        <div className="space-y-3">
+          <p className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-zinc-500">ENS</span>
+            <span className="font-medium text-white">{renderENSName()}</span>
+            {ownershipStatus === "verified" ? (
+              <span className="text-emerald-400">✓ yours</span>
+            ) : null}
+          </p>
           {isDetectingEns ? (
-            <p className="text-xs text-zinc-500">
-              Looking up the ENS name for this wallet...
-            </p>
+            <p className="text-xs text-zinc-500">Looking up ENS...</p>
           ) : null}
           {!isDetectingEns && walletAddress && !sourceEnsName.trim() ? (
-            <p className="text-xs text-zinc-500">
-              No primary ENS found for this wallet.
-            </p>
+            <p className="text-xs text-zinc-500">No ENS found for this wallet.</p>
           ) : null}
           {ownershipStatus === "unverified" ? (
             <p className="text-xs text-rose-400">
               {ownershipMessage || "This wallet does not control that name."}
             </p>
           ) : null}
+          {birthdate ? (
+            <p className="text-sm text-zinc-300">
+              Birthday {formatBirthdate(birthdate)}
+            </p>
+          ) : null}
+          {teaserSign ? (
+            <p className="font-display text-lg text-[#E8C56A]">
+              Your name is a {teaserSign}
+            </p>
+          ) : null}
         </div>
-
-        {birthdate && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 text-violet-300" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                    <circle cx="5" cy="7" r="1.4" fill="#E8C56A" />
-                    <circle cx="11" cy="5" r="1.4" fill="#E8C56A" />
-                    <circle cx="16" cy="9" r="1.4" fill="#E8C56A" />
-                    <circle cx="19" cy="15" r="1.4" fill="#E8C56A" />
-                    <path
-                      d="M5 7L11 5L16 9L19 15"
-                      stroke="#C4B5FD"
-                      strokeWidth="1.2"
-                    />
-                  </svg>
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-white">
-                    {birthdate
-                      ? `ENS birthday: ${formatBirthdate(birthdate)}`
-                      : isDetectingBirthday
-                        ? "Detecting ENS birthday..."
-                        : "ENS birthday"}
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {birthdate
-                      ? birthdaySourceLabel(birthdaySource)
-                      : "Verify a name to read its onchain birth date"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {teaserSign ? (
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-white/15 px-4 py-4">
-            <div>
-              <p className="font-display text-lg text-[#E8C56A]">
-                Your name is a {teaserSign}
-              </p>
-              <p className="mt-1 text-sm text-zinc-500">
-                Free teaser — the full reading awaits
-              </p>
-            </div>
-            <span className="text-[#E8C56A]" aria-hidden="true">
-              ✦
-            </span>
-          </div>
-        ) : null}
 
         <input
           type="hidden"
@@ -831,119 +845,32 @@ export default function CreateReadingForm({
           readOnly
         />
 
-        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xl font-semibold tracking-tight text-white">
-              0.01 USDC
-            </p>
-            <p className="mt-1 text-sm text-zinc-500">
-              Demo token · Sepolia testnet
-            </p>
-          </div>
-          <button
-            type="submit"
-            disabled={isBusy || isDetectingEns || !sourceEnsName.trim()}
-            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-[#C4B5FD] px-6 py-3 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span aria-hidden="true" className="mr-2">
-              ✦
-            </span>
-            {submitLabel}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={isBusy || isDetectingEns || !sourceEnsName.trim()}
+          className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#C4B5FD] px-6 py-3 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitLabel} · 0.01 USDC
+        </button>
       </form>
 
-      <p className="mt-5 text-center text-sm text-zinc-500">
-        Entertainment only — not advice. Facts marked as verified come from real
-        onchain data.
-      </p>
-
-      {flowMessage && isBusy ? (
-        <p className="mt-3 text-center text-sm text-violet-200">
-          {flowMessage}
-        </p>
-      ) : null}
-
-      {localError ? (
+      {localError && !progressOpen ? (
         <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {localError}
         </div>
       ) : null}
 
-      {approveTxHash || purchaseTxHash || visibilityTxHash ? (
-        <div className="mt-4 space-y-1 rounded-2xl border border-white/10 bg-[#141022]/80 p-4 text-xs text-zinc-400">
-          <p className="text-sm font-medium text-white">Payment transactions</p>
-          {approveTxHash ? (
-            <p className="break-all">approve: {approveTxHash}</p>
-          ) : null}
-          {purchaseTxHash ? (
-            <p className="break-all">purchaseReading: {purchaseTxHash}</p>
-          ) : null}
-          {visibilityTxHash ? (
-            <p className="break-all">setReadingPublished: {visibilityTxHash}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {state.message ? (
-        <div
-          className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
-            state.status === "error"
-              ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-          }`}
-        >
-          {state.message}
-        </div>
-      ) : null}
-
-      {state.result ? (
-        <div className="mt-6 space-y-3 rounded-[28px] border border-white/10 bg-[#141022]/80 p-6 text-sm">
-          <p className="font-display text-2xl text-white">
-            {state.result.horoscope.sign} — {state.result.horoscope.title}
-          </p>
-          <p className="text-zinc-400">
-            {state.result.sourceEnsName}
-            {state.result.birthdate
-              ? ` · ${formatBirthdate(state.result.birthdate)}`
-              : ""}
-          </p>
-          <div className="flex flex-wrap gap-3">
-            {state.result.readingNamehash ? (
-              <a
-                href={`/feed/${state.result.readingNamehash}`}
-                className="inline-block text-sm text-violet-300 underline"
-              >
-                Open full reading
-              </a>
-            ) : null}
-            {state.result.readingEnsName ? (
-              <a
-                href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-block text-sm text-violet-300 underline"
-              >
-                {state.result.readingEnsName}
-              </a>
-            ) : null}
-          </div>
-          <p className="whitespace-pre-wrap leading-7 text-zinc-200">
-            {state.result.horoscope.reading}
-          </p>
-          <p className="text-zinc-500">
-            Lucky color {formatLuckyColorName(state.result.horoscope.luckyColor)} · Lucky number{" "}
-            {state.result.horoscope.luckyNumber}
-          </p>
-          <ul className="space-y-1 text-xs text-zinc-500">
-            {Object.entries(state.result.transactions).map(([key, hash]) => (
-              <li key={key} className="break-all">
-                {key}: {hash}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <ReadingProgressModal
+        open={progressOpen}
+        status={progressStatus}
+        step={progressStep}
+        message={flowMessage}
+        purchaseTxHash={purchaseTxHash}
+        approveTxHash={approveTxHash}
+        publishTxHash={visibilityTxHash}
+        errorMessage={localError}
+        onClose={closeProgressModal}
+      />
 
       <details className="mt-8 rounded-2xl border border-white/10 bg-[#141022]/60 p-4 text-sm text-zinc-300">
         <summary className="cursor-pointer font-medium text-zinc-200">

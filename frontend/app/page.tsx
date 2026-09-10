@@ -1,5 +1,7 @@
 import { headers } from 'next/headers';
+import { revalidatePath } from 'next/cache';
 import { namehash } from 'viem';
+import { invalidateFeedCache } from '@/lib/feed';
 import {
   ORACLE_ADDRESS,
   revokeOracleTextRoles,
@@ -124,6 +126,9 @@ async function createReadingAction(
       visibility === 'public'
         ? ' Reading published to the Cosmic Feed.'
         : ' Reading created.';
+
+    invalidateFeedCache();
+    revalidatePath('/');
 
     return {
       status: 'success',
