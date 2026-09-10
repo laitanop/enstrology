@@ -14,11 +14,11 @@ export default async function CosmicFeedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-black dark:text-zinc-100">
+    <div className="min-h-screen px-4 py-10 text-zinc-100">
       <main className="mx-auto w-full max-w-3xl">
         <SiteNav current="feed" />
         <h1 className="text-2xl font-semibold tracking-tight">Cosmic Feed</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-2 text-sm text-zinc-300">
           Public horoscopes from ENS names. Anyone can read these. Private readings stay hidden.
         </p>
 
@@ -29,7 +29,7 @@ export default async function CosmicFeedPage() {
         ) : null}
 
         {!loadError && cards.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+          <div className="mt-6 rounded-xl border border-white/15 bg-white/90 p-6 text-sm text-zinc-700 backdrop-blur-md">
             No public readings yet. Create a horoscope and set visibility to public.
           </div>
         ) : null}
@@ -38,17 +38,17 @@ export default async function CosmicFeedPage() {
           {cards.map((card) => (
             <article
               key={card.readingNamehash}
-              className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+              className="rounded-2xl border border-white/15 bg-white/90 p-5 text-zinc-900 shadow-sm backdrop-blur-md"
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+              <p className="text-xs font-medium uppercase tracking-wide text-indigo-600">
                 {card.sign || 'Horoscope'}
               </p>
               <h2 className="mt-1 text-lg font-semibold">{card.title || 'Untitled reading'}</h2>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="mt-1 text-sm text-zinc-600">
                 {card.sourceEnsName}
                 {card.birthdate ? ` · birthday ${card.birthdate}` : ''}
               </p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-800 dark:text-zinc-200">
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
                 {card.reading}
               </p>
               {(card.luckyColor || card.luckyNumber) && (

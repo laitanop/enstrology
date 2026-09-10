@@ -271,17 +271,26 @@ async function retryOracleWriteAction(input: {
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-black dark:text-zinc-100">
-      <main className="mx-auto flex w-full max-w-2xl flex-col items-center">
-        <div className="w-full">
-          <SiteNav current="create" />
+    <div className="min-h-dvh px-4 py-8 text-zinc-100">
+      <main className="mx-auto flex w-full max-w-xl flex-col">
+        <SiteNav current="create" />
+        <header className="mt-10 text-center sm:mt-14">
+          <h1 className="font-display text-4xl font-medium tracking-tight text-white sm:text-5xl">
+            Every name has a birthday
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-base leading-7 text-zinc-400">
+            The day your ENS name was born onchain decides its sign. Verify your
+            name and let the Oracle read its stars.
+          </p>
+        </header>
+        <div className="mt-8">
+          <CreateReadingForm
+            action={createReadingAction}
+            forbiddenWriteAction={forbiddenWriteAction}
+            revokeOracleAction={revokeOracleAction}
+            retryOracleWriteAction={retryOracleWriteAction}
+          />
         </div>
-        <CreateReadingForm
-          action={createReadingAction}
-          forbiddenWriteAction={forbiddenWriteAction}
-          revokeOracleAction={revokeOracleAction}
-          retryOracleWriteAction={retryOracleWriteAction}
-        />
       </main>
     </div>
   );

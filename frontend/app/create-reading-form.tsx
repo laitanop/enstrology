@@ -139,6 +139,51 @@ function dateToCompact(dateISO: string): string {
   return dateISO.replaceAll('-', '');
 }
 
+function formatBirthdate(dateISO: string): string {
+  const parsed = new Date(`${dateISO}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return dateISO;
+  }
+  return parsed.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function getZodiacSign(dateISO: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO);
+  if (!match) {
+    return null;
+  }
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const n = month * 100 + day;
+  if (n >= 321 && n <= 419) return 'Aries';
+  if (n >= 420 && n <= 520) return 'Taurus';
+  if (n >= 521 && n <= 620) return 'Gemini';
+  if (n >= 621 && n <= 722) return 'Cancer';
+  if (n >= 723 && n <= 822) return 'Leo';
+  if (n >= 823 && n <= 922) return 'Virgo';
+  if (n >= 923 && n <= 1022) return 'Libra';
+  if (n >= 1023 && n <= 1121) return 'Scorpio';
+  if (n >= 1122 && n <= 1221) return 'Sagittarius';
+  if (n >= 1222 || n <= 119) return 'Capricorn';
+  if (n >= 120 && n <= 218) return 'Aquarius';
+  return 'Pisces';
+}
+
+function birthdaySourceLabel(source: string): string {
+  if (source === 'ens-subgraph') {
+    return 'Verified from the mainnet registration event';
+  }
+  if (source === 'ensv2-sepolia') {
+    return 'Verified from the Sepolia registration event';
+  }
+  return 'Verified from the onchain registration event';
+}
+
 function getReadingEnsName(sourceEnsName: string, birthdate: string): string {
   const sourceLabel = sourceEnsName.split('.')[0] || 'reading';
   const compactDate = dateToCompact(birthdate);
@@ -164,6 +209,7 @@ export default function CreateReadingForm({
   const [walletAddress, setWalletAddress] = useState<string>('');
   const [sourceEnsName, setSourceEnsName] = useState<string>('');
   const [birthdate, setBirthdate] = useState<string>('');
+  const [birthdaySource, setBirthdaySource] = useState<string>('');
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
   const [localError, setLocalError] = useState<string>('');
   const [flowMessage, setFlowMessage] = useState<string>('Connect wallet to start.');
@@ -280,6 +326,8 @@ export default function CreateReadingForm({
       const nextWallet = accounts[0] || '';
       setWalletAddress(nextWallet);
       setSourceEnsName('');
+      setBirthdate('');
+      setBirthdaySource('');
       setOwnershipStatus('idle');
       setOwnershipMessage('');
       setVerifiedIdentityKey('');
@@ -322,9 +370,9 @@ export default function CreateReadingForm({
     };
   }, [walletAddress, detectPrimaryEnsFromWallet]);
 
-  const detectBirthday = async (): Promise<void> => {
+  const detectBirthday = useCallback(async (ensName?: string): Promise<void> => {
     setLocalError('');
-    const normalizedEns = sourceEnsName.trim().toLowerCase();
+    const normalizedEns = (ensName || sourceEnsName).trim().toLowerCase();
     if (!ENS_NAME_REGEX.test(normalizedEns)) {
       setLocalError('Enter a valid ENS name first (example: pamela.eth).');
       return;
@@ -339,6 +387,7 @@ export default function CreateReadingForm({
       );
       const json = (await response.json()) as {
         birthdateISO?: string;
+        source?: string;
         error?: string;
       };
       if (!response.ok || !json.birthdateISO) {
@@ -346,6 +395,7 @@ export default function CreateReadingForm({
       }
 
       setBirthdate(json.birthdateISO);
+      setBirthdaySource(json.source || '');
       setFlowMessage(`Birthday detected: ${json.birthdateISO}`);
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : 'Could not detect ENS birthday.');
@@ -353,7 +403,7 @@ export default function CreateReadingForm({
     } finally {
       setIsDetectingBirthday(false);
     }
-  };
+  }, [sourceEnsName]);
 
   const verifyOwnership = useCallback(
     async (walletInput?: `0x${string}`, sourceInput?: string): Promise<boolean> => {
@@ -454,14 +504,24 @@ export default function CreateReadingForm({
     };
   }, [walletAddress, sourceEnsName, ownershipStatus, verifiedIdentityKey, verifyOwnership]);
 
+  useEffect(() => {
+    const source = sourceEnsName.trim().toLowerCase();
+    if (ownershipStatus !== 'verified' || !ENS_NAME_REGEX.test(source) || birthdate || isDetectingBirthday) {
+      return;
+    }
+    void detectBirthday(source);
+  }, [ownershipStatus, sourceEnsName, birthdate, isDetectingBirthday, detectBirthday]);
+
+  const teaserSign = useMemo(() => (birthdate ? getZodiacSign(birthdate) : null), [birthdate]);
+
   const getProofResultClassName = (result: PermissionProofResult): string => {
     if (result.status === 'success' || result.status === 'expected_revert') {
-      return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300';
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
     }
     if (result.status === 'unexpected_success') {
-      return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300';
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
     }
-    return 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300';
+    return 'border-rose-500/30 bg-rose-500/10 text-rose-200';
   };
 
   const ensureSepolia = async (): Promise<void> => {
@@ -604,254 +664,316 @@ export default function CreateReadingForm({
     }
   };
 
-  return (
-    <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <h1 className="text-2xl font-semibold tracking-tight">Create Reading</h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-        Connect wallet, pay 0.01 demo USDC, then write horoscope text records onchain.
-      </p>
+  const submitLabel = isBusy ? 'Reading the stars...' : 'Reveal my ENScope';
 
-      <div className="mt-4 space-y-3">
-        {wallets.length > 1 ? (
+  return (
+    <div className="w-full">
+      <form
+        onSubmit={onSubmit}
+        className="rounded-[28px] border border-white/10 bg-[#141022]/80 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8"
+      >
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-zinc-600 dark:text-zinc-400">Wallet:</span>
-            {wallets.map((wallet) => (
-              <button
-                key={wallet.info.rdns}
-                type="button"
-                disabled={isBusy}
-                onClick={() => {
-                  setSelectedWalletRdns(wallet.info.rdns);
-                  setWalletAddress('');
-                  setSourceEnsName('');
+            {wallets.length > 1
+              ? wallets.map((wallet) => (
+                  <button
+                    key={wallet.info.rdns}
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => {
+                      setSelectedWalletRdns(wallet.info.rdns);
+                      setWalletAddress('');
+                      setSourceEnsName('');
+                      setBirthdate('');
+                      setBirthdaySource('');
+                      setOwnershipStatus('idle');
+                      setOwnershipMessage('');
+                      setVerifiedIdentityKey('');
+                      lastAutoVerifyKeyRef.current = '';
+                      setFlowMessage(`Selected ${wallet.info.name}. Click Connect Wallet.`);
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      activeWallet?.info.rdns === wallet.info.rdns
+                        ? 'bg-violet-500/20 text-violet-200'
+                        : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    {wallet.info.name}
+                  </button>
+                ))
+              : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  setLocalError('');
+                  setFlowMessage('Connecting wallet...');
+                  await connectWallet();
+                  await ensureSepolia();
+                } catch (error) {
+                  setLocalError(error instanceof Error ? error.message : 'Could not connect wallet.');
+                  setFlowMessage('Connection failed.');
+                }
+              }}
+              disabled={isBusy}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {walletAddress ? 'Wallet connected' : 'Connect wallet'}
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={async () => {
+                try {
+                  setLocalError('');
+                  setFlowMessage('Choose the account to use in your wallet...');
+                  const provider = getProvider();
+                  await provider.request({
+                    method: 'wallet_requestPermissions',
+                    params: [{ eth_accounts: {} }],
+                  });
+                  await connectWallet();
+                  await ensureSepolia();
+                } catch (error) {
+                  setLocalError(error instanceof Error ? error.message : 'Could not switch account.');
+                  setFlowMessage('Account switch cancelled.');
+                }
+              }}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Switch
+            </button>
+          </div>
+        </div>
+        {walletAddress ? (
+          <p className="mb-5 truncate text-xs text-zinc-500">
+            {activeWallet?.info.name ? `${activeWallet.info.name} · ` : ''}
+            {walletAddress}
+          </p>
+        ) : null}
+
+        <div className="space-y-2">
+          <label
+            htmlFor="sourceEnsName"
+            className="text-[11px] font-semibold tracking-[0.16em] text-zinc-500 uppercase"
+          >
+            Your ENS name
+          </label>
+          <div className="relative">
+            <input
+              id="sourceEnsName"
+              name="sourceEnsName"
+              type="text"
+              placeholder="pamela.eth"
+              required
+              value={sourceEnsName}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setSourceEnsName(nextValue);
+                setBirthdate('');
+                setBirthdaySource('');
+                const nextKey = `${walletAddress.trim().toLowerCase()}|${nextValue.trim().toLowerCase()}`;
+                if (verifiedIdentityKey !== nextKey) {
                   setOwnershipStatus('idle');
                   setOwnershipMessage('');
-                  setVerifiedIdentityKey('');
-                  lastAutoVerifyKeyRef.current = '';
-                  setFlowMessage(`Selected ${wallet.info.name}. Click Connect Wallet.`);
-                }}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  activeWallet?.info.rdns === wallet.info.rdns
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
-                    : 'border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900'
-                }`}
-              >
-                {wallet.info.name}
-              </button>
-            ))}
+                }
+              }}
+              className="w-full rounded-2xl border border-white/10 bg-[#0c0a18] px-4 py-3.5 pr-44 text-base text-white outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+            />
+            <div className="absolute inset-y-0 right-3 flex items-center">
+              {ownershipStatus === 'verified' ? (
+                <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-400">
+                  <span aria-hidden="true">✓</span>
+                  You control this name
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isBusy || !walletAddress.trim() || !sourceEnsName.trim()}
+                  onClick={async () => {
+                    await verifyOwnership(
+                      walletAddress ? (walletAddress as `0x${string}`) : undefined,
+                      sourceEnsName
+                    );
+                  }}
+                  className="text-xs font-medium text-violet-300 hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {ownershipStatus === 'verifying' ? 'Checking...' : 'Verify'}
+                </button>
+              )}
+            </div>
+          </div>
+          {ownershipStatus === 'unverified' ? (
+            <p className="text-xs text-rose-400">{ownershipMessage || 'This wallet does not control that name.'}</p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 text-violet-300" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <circle cx="5" cy="7" r="1.4" fill="#E8C56A"/>
+                  <circle cx="11" cy="5" r="1.4" fill="#E8C56A"/>
+                  <circle cx="16" cy="9" r="1.4" fill="#E8C56A"/>
+                  <circle cx="19" cy="15" r="1.4" fill="#E8C56A"/>
+                  <path d="M5 7L11 5L16 9L19 15" stroke="#C4B5FD" strokeWidth="1.2"/>
+                </svg>
+              </span>
+              <div>
+                <p className="text-sm font-medium text-white">
+                  {birthdate
+                    ? `ENS birthday: ${formatBirthdate(birthdate)}`
+                    : isDetectingBirthday
+                      ? 'Detecting ENS birthday...'
+                      : 'ENS birthday'}
+                </p>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {birthdate
+                    ? birthdaySourceLabel(birthdaySource)
+                    : 'Verify a name to read its onchain birth date'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void detectBirthday()}
+              disabled={isBusy}
+              className="shrink-0 text-xs font-medium text-zinc-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Refresh
+            </button>
+          </div>
+          {!birthdate ? (
+            <input
+              id="birthdate"
+              name="birthdate"
+              type="date"
+              required
+              value={birthdate}
+              onChange={(event) => setBirthdate(event.target.value)}
+              className="mt-3 w-full rounded-xl border border-white/10 bg-[#0c0a18] px-3 py-2 text-sm text-zinc-300 outline-none focus:border-violet-400/50"
+            />
+          ) : (
+            <input type="hidden" name="birthdate" value={birthdate} />
+          )}
+        </div>
+
+        {teaserSign ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-white/15 px-4 py-4">
+            <div>
+              <p className="font-display text-lg text-[#E8C56A]">Your name is a {teaserSign}</p>
+              <p className="mt-1 text-sm text-zinc-500">Free teaser — the full reading awaits</p>
+            </div>
+            <span className="text-[#E8C56A]" aria-hidden="true">✦</span>
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                setLocalError('');
-                setFlowMessage('Connecting wallet...');
-                await connectWallet();
-                await ensureSepolia();
-              } catch (error) {
-                setLocalError(error instanceof Error ? error.message : 'Could not connect wallet.');
-                setFlowMessage('Connection failed.');
-              }
-            }}
-            disabled={isBusy}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            {walletAddress ? 'Wallet Connected' : 'Connect Wallet'}
-          </button>
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={async () => {
-              try {
-                setLocalError('');
-                setFlowMessage('Choose the account to use in your wallet...');
-                const provider = getProvider();
-                await provider.request({
-                  method: 'wallet_requestPermissions',
-                  params: [{ eth_accounts: {} }],
-                });
-                await connectWallet();
-                await ensureSepolia();
-              } catch (error) {
-                setLocalError(error instanceof Error ? error.message : 'Could not switch account.');
-                setFlowMessage('Account switch cancelled.');
-              }
-            }}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Switch Account
-          </button>
-          <span className="text-xs text-zinc-600 dark:text-zinc-400">
-            {walletAddress
-              ? `${activeWallet?.info.name ? `${activeWallet.info.name}: ` : ''}${walletAddress}`
-              : 'No wallet connected'}
-          </span>
-        </div>
-      </div>
+        <input type="hidden" name="readingNamehash" value={readingPreview.readingNamehash} readOnly />
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div className="space-y-1">
-          <label htmlFor="sourceEnsName" className="text-sm font-medium">
-            sourceEnsName
-          </label>
-          <input
-            id="sourceEnsName"
-            name="sourceEnsName"
-            type="text"
-            placeholder="pamela.eth"
-            required
-            value={sourceEnsName}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setSourceEnsName(nextValue);
-              const nextKey = `${walletAddress.trim().toLowerCase()}|${nextValue.trim().toLowerCase()}`;
-              if (verifiedIdentityKey !== nextKey) {
-                setOwnershipStatus('idle');
-                setOwnershipMessage('');
-              }
-            }}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Verify this wallet controls the source on Sepolia before paying.
-            </p>
-            <button
-              type="button"
-              disabled={isBusy || !walletAddress.trim() || !sourceEnsName.trim()}
-              onClick={async () => {
-                await verifyOwnership(
-                  walletAddress ? (walletAddress as `0x${string}`) : undefined,
-                  sourceEnsName
-                );
-              }}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Verify Ownership
-            </button>
-          </div>
-          {ownershipStatus !== 'idle' ? (
-            <p
-              className={`text-xs ${
-                ownershipStatus === 'verified'
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : ownershipStatus === 'verifying'
-                    ? 'text-zinc-600 dark:text-zinc-300'
-                    : 'text-red-600 dark:text-red-400'
-              }`}
-            >
-              {ownershipStatus === 'verified'
-                ? `Verified: ${ownershipMessage}`
-                : ownershipStatus === 'verifying'
-                  ? ownershipMessage || 'Verifying...'
-                  : `Not verified: ${ownershipMessage || 'Verification failed.'}`}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <label htmlFor="birthdate" className="text-sm font-medium">
-              birthdate
+        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xl font-semibold tracking-tight text-white">0.01 USDC</p>
+            <p className="mt-1 text-sm text-zinc-500">Demo token · Sepolia testnet</p>
+            <label className="mt-3 flex items-center gap-2 text-sm text-zinc-400">
+              <input
+                type="checkbox"
+                checked={visibility === 'public'}
+                onChange={(event) => setVisibility(event.target.checked ? 'public' : 'private')}
+                className="h-4 w-4 rounded border-white/20 bg-transparent"
+              />
+              Share on Cosmic Feed
             </label>
-            <button
-              type="button"
-              onClick={detectBirthday}
-              disabled={isBusy}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Detect ENS Birthday
-            </button>
           </div>
-          <input
-            id="birthdate"
-            name="birthdate"
-            type="date"
-            required
-            value={birthdate}
-            onChange={(event) => setBirthdate(event.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Detects the ENS registration date and fills this field automatically.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="readingNamehash" className="text-sm font-medium">
-            readingNamehash (auto-computed)
-          </label>
-          <input
-            id="readingNamehash"
-            name="readingNamehash"
-            type="text"
-            value={readingPreview.readingNamehash}
-            readOnly
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          {readingPreview.readingEnsName ? (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              reading ENS: {readingPreview.readingEnsName}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="visibility" className="text-sm font-medium">
-            visibility
-          </label>
-          <select
-            id="visibility"
-            name="visibility"
-            value={visibility}
-            onChange={(event) => setVisibility(event.target.value as 'private' | 'public')}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-[#C4B5FD] px-6 py-3 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <option value="private">private</option>
-            <option value="public">public</option>
-          </select>
+            <span aria-hidden="true" className="mr-2">✦</span>
+            {submitLabel}
+          </button>
         </div>
-
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isBusy ? 'Processing...' : 'Pay & Create Horoscope'}
-        </button>
       </form>
 
-      <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        {flowMessage}
-      </div>
+      <p className="mt-5 text-center text-sm text-zinc-500">
+        Entertainment only — not advice. Facts marked as verified come from real onchain data.
+      </p>
+
+      {flowMessage && isBusy ? (
+        <p className="mt-3 text-center text-sm text-violet-200">{flowMessage}</p>
+      ) : null}
 
       {localError ? (
-        <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {localError}
         </div>
       ) : null}
 
       {approveTxHash || purchaseTxHash || visibilityTxHash ? (
-        <div className="mt-4 space-y-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="font-medium text-sm">Payment Transactions</p>
-          {approveTxHash ? <p>approve: {approveTxHash}</p> : null}
-          {purchaseTxHash ? <p>purchaseReading: {purchaseTxHash}</p> : null}
-          {visibilityTxHash ? <p>setReadingPublished: {visibilityTxHash}</p> : null}
+        <div className="mt-4 space-y-1 rounded-2xl border border-white/10 bg-[#141022]/80 p-4 text-xs text-zinc-400">
+          <p className="text-sm font-medium text-white">Payment transactions</p>
+          {approveTxHash ? <p className="break-all">approve: {approveTxHash}</p> : null}
+          {purchaseTxHash ? <p className="break-all">purchaseReading: {purchaseTxHash}</p> : null}
+          {visibilityTxHash ? <p className="break-all">setReadingPublished: {visibilityTxHash}</p> : null}
         </div>
       ) : null}
 
-      <div className="mt-6 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="font-medium">Permission Proof (ENSv2)</p>
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">
-          Judge demo: prove Oracle cannot write forbidden fields, then revoke permission and prove
+      {state.message ? (
+        <div
+          className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+            state.status === 'error'
+              ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+          }`}
+        >
+          {state.message}
+        </div>
+      ) : null}
+
+      {state.result ? (
+        <div className="mt-6 space-y-3 rounded-[28px] border border-white/10 bg-[#141022]/80 p-6 text-sm">
+          <p className="font-display text-2xl text-white">
+            {state.result.horoscope.sign} — {state.result.horoscope.title}
+          </p>
+          <p className="text-zinc-400">
+            {state.result.sourceEnsName}
+            {state.result.birthdate ? ` · ${formatBirthdate(state.result.birthdate)}` : ''}
+          </p>
+          {state.result.readingEnsName ? (
+            <a
+              href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-violet-300 underline"
+            >
+              {state.result.readingEnsName}
+            </a>
+          ) : null}
+          <p className="whitespace-pre-wrap leading-7 text-zinc-200">{state.result.horoscope.reading}</p>
+          <p className="text-zinc-500">
+            Lucky color {state.result.horoscope.luckyColor} · Lucky number {state.result.horoscope.luckyNumber}
+          </p>
+          <ul className="space-y-1 text-xs text-zinc-500">
+            {Object.entries(state.result.transactions).map(([key, hash]) => (
+              <li key={key} className="break-all">
+                {key}: {hash}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <details className="mt-8 rounded-2xl border border-white/10 bg-[#141022]/60 p-4 text-sm text-zinc-300">
+        <summary className="cursor-pointer font-medium text-zinc-200">Permission proof (ENSv2)</summary>
+        <p className="mt-2 text-xs text-zinc-500">
+          Judge demo: prove the Oracle cannot write forbidden fields, then revoke permission and prove
           writes are blocked.
         </p>
-
-        <div className="space-y-1">
-          <label htmlFor="permissionNodeName" className="text-xs font-medium">
+        <div className="mt-3 space-y-1">
+          <label htmlFor="permissionNodeName" className="text-xs font-medium text-zinc-400">
             Permission node for revoke test
           </label>
           <input
@@ -860,11 +982,10 @@ export default function CreateReadingForm({
             value={permissionNodeName}
             onChange={(event) => setPermissionNodeName(event.target.value)}
             placeholder="oracle.enstrology.eth"
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-indigo-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950"
+            className="w-full rounded-xl border border-white/10 bg-[#0c0a18] px-3 py-2 text-sm text-white outline-none focus:border-violet-400/50"
           />
         </div>
-
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <button
             type="button"
             disabled={isBusy || !sourceEnsName.trim()}
@@ -878,7 +999,7 @@ export default function CreateReadingForm({
                 setFlowMessage(result.message);
               })
             }
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           >
             1) Forbidden Write
           </button>
@@ -895,7 +1016,7 @@ export default function CreateReadingForm({
                 setFlowMessage(result.message);
               })
             }
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           >
             2) Revoke Oracle
           </button>
@@ -912,115 +1033,33 @@ export default function CreateReadingForm({
                 setFlowMessage(result.message);
               })
             }
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           >
             3) Retry Write
           </button>
         </div>
-
         {forbiddenResult ? (
-          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}>
+          <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}>
             <p className="font-medium">Forbidden Write Result</p>
             <p>{forbiddenResult.message}</p>
             {forbiddenResult.txHash ? <p>tx: {forbiddenResult.txHash}</p> : null}
-            {forbiddenResult.oracleAddress ? <p>oracle: {forbiddenResult.oracleAddress}</p> : null}
           </div>
         ) : null}
-
         {revokeResult ? (
-          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}>
+          <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}>
             <p className="font-medium">Revoke Result</p>
             <p>{revokeResult.message}</p>
             {revokeResult.txHash ? <p>tx: {revokeResult.txHash}</p> : null}
-            {revokeResult.oracleAddress ? <p>oracle: {revokeResult.oracleAddress}</p> : null}
           </div>
         ) : null}
-
         {retryResult ? (
-          <div className={`rounded-lg border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}>
+          <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}>
             <p className="font-medium">Post-Revoke Write Result</p>
             <p>{retryResult.message}</p>
             {retryResult.txHash ? <p>tx: {retryResult.txHash}</p> : null}
-            {retryResult.oracleAddress ? <p>oracle: {retryResult.oracleAddress}</p> : null}
           </div>
         ) : null}
-      </div>
-
-      {state.message ? (
-        <div
-          className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
-            state.status === 'error'
-              ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'
-              : 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
-          }`}
-        >
-          {state.message}
-        </div>
-      ) : null}
-
-      {state.result ? (
-        <div className="mt-6 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <p>
-            <span className="font-medium">ENS:</span> {state.result.sourceEnsName}
-          </p>
-          <p>
-            <span className="font-medium">Birthdate:</span> {state.result.birthdate}
-          </p>
-          <p>
-            <span className="font-medium">Reading:</span> {state.result.readingNamehash}
-          </p>
-          {state.result.readingEnsName ? (
-            <p>
-              <span className="font-medium">Reading name:</span>{' '}
-              <a
-                href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                {state.result.readingEnsName}
-              </a>
-            </p>
-          ) : null}
-          <p>
-            <span className="font-medium">Visibility:</span> {state.result.visibility}
-          </p>
-
-          <div className="pt-1">
-            <p className="font-medium">Horoscope</p>
-            <p className="mt-1">
-              {state.result.horoscope.sign} — {state.result.horoscope.title}
-            </p>
-            <p className="mt-1 text-zinc-700 dark:text-zinc-300">
-              {state.result.horoscope.reading}
-            </p>
-            <p className="mt-1 text-zinc-700 dark:text-zinc-300">
-              Lucky color: {state.result.horoscope.luckyColor} | Lucky number:{' '}
-              {state.result.horoscope.luckyNumber}
-            </p>
-          </div>
-
-          <div className="pt-1">
-            <p className="font-medium">Generated Text</p>
-            <div className="mt-1 rounded-lg border border-zinc-200 bg-white p-3 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-              <p className="whitespace-pre-wrap break-words">
-                {state.result.horoscope.reading}
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-1">
-            <p className="font-medium">Transactions</p>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
-              {Object.entries(state.result.transactions).map(([key, hash]) => (
-                <li key={key}>
-                  {key}: {hash}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
+      </details>
     </div>
   );
 }
