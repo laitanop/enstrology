@@ -19,12 +19,37 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://enstrology.laitanop.dev"),
   title: "ENStrology",
   description: "AI horoscopes for ENS names, written onchain with ENSv2.",
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  openGraph: {
+    title: "ENStrology",
+    description: "AI horoscopes for ENS names, written onchain with ENSv2.",
+    url: "https://enstrology.laitanop.dev",
+    siteName: "ENStrology",
+    type: "website",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "ENStrology — every ENS name has a birthday",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ENStrology",
+    description: "AI horoscopes for ENS names, written onchain with ENSv2.",
+    images: ["/og.png"],
   },
 };
 
