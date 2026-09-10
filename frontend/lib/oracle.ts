@@ -15,7 +15,7 @@ const THIRTY_DAYS_SECONDS = BigInt(30 * 24 * 60 * 60);
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY;
 const DEFAULT_ORACLE_MODEL = process.env.ORACLE_MODEL || 'anthropic/claude-3.5-sonnet';
-const MAX_LOG_BLOCK_RANGE = BigInt(process.env.ORACLE_MAX_LOG_BLOCK_RANGE || '49000');
+const MAX_LOG_BLOCK_RANGE = BigInt(process.env.ORACLE_MAX_LOG_BLOCK_RANGE || '2000');
 const ALL_ROLES_MASK = BigInt(
   '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 );
@@ -156,6 +156,7 @@ export type PurchasedReadingEvent = {
   amount: bigint;
   timestamp: bigint;
   blockNumber: bigint;
+  transactionHash: `0x${string}` | null;
 };
 
 function getAppWalletClient() {
@@ -312,6 +313,44 @@ export async function hasHoroscopeRecord(readingNamehash: `0x${string}`): Promis
   }
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRpcRangeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /rate limit|exceeds defined limit|block range|too many requests/i.test(message);
+}
+
+async function getLogsInChunks<T>(input: {
+  fromBlock: bigint;
+  toBlock: bigint;
+  getChunk: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>;
+}): Promise<T[]> {
+  const logs: T[] = [];
+  let chunkSize = MAX_LOG_BLOCK_RANGE < BigInt(1) ? BigInt(1) : MAX_LOG_BLOCK_RANGE;
+  let chunkStart = input.fromBlock;
+
+  while (chunkStart <= input.toBlock) {
+    const chunkEndCandidate = chunkStart + chunkSize - BigInt(1);
+    const chunkEnd = chunkEndCandidate < input.toBlock ? chunkEndCandidate : input.toBlock;
+    try {
+      logs.push(...(await input.getChunk(chunkStart, chunkEnd)));
+      chunkStart = chunkEnd + BigInt(1);
+      await sleep(40);
+    } catch (error) {
+      if (chunkSize > BigInt(250) && isRpcRangeError(error)) {
+        chunkSize /= BigInt(2);
+        await sleep(350);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return logs;
+}
+
 export async function getPurchasedReadings(
   fromBlock: bigint,
   toBlock: bigint
@@ -331,27 +370,20 @@ export async function getPurchasedReadings(
     throw new Error('ORACLE_MAX_LOG_BLOCK_RANGE must be >= 1');
   }
 
-  const logs = [];
-  const one = BigInt(1);
-  let chunkStart = fromBlock;
+  const rawLogs = await getLogsInChunks({
+    fromBlock,
+    toBlock,
+    getChunk: (chunkFrom, chunkTo) =>
+      publicClient.getLogs({
+        address: ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
+        event: READING_PURCHASED_EVENT,
+        fromBlock: chunkFrom,
+        toBlock: chunkTo,
+      }),
+  });
 
-  while (chunkStart <= toBlock) {
-    const chunkEndCandidate = chunkStart + MAX_LOG_BLOCK_RANGE - one;
-    const chunkEnd = chunkEndCandidate < toBlock ? chunkEndCandidate : toBlock;
-
-    const chunkLogs = await publicClient.getLogs({
-      address: ENSTROLOGY_PAY_ADDRESS as `0x${string}`,
-      event: READING_PURCHASED_EVENT,
-      fromBlock: chunkStart,
-      toBlock: chunkEnd,
-    });
-    logs.push(...chunkLogs);
-
-    chunkStart = chunkEnd + one;
-  }
-
-  return logs
-    .map((log) => {
+  return rawLogs
+    .map((log): PurchasedReadingEvent | null => {
       const args = log.args;
       if (
         !args.buyer ||
@@ -371,6 +403,7 @@ export async function getPurchasedReadings(
         amount: args.amount,
         timestamp: args.timestamp,
         blockNumber: log.blockNumber,
+        transactionHash: log.transactionHash ?? null,
       };
     })
     .filter((event): event is PurchasedReadingEvent => event !== null);

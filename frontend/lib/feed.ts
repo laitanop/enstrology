@@ -9,8 +9,11 @@ import {
 const RESOLVER_ADDRESS = (process.env.RESOLVER_ADDRESS ||
   process.env.NEXT_PUBLIC_RESOLVER_ADDRESS) as `0x${string}` | undefined;
 const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
-const FEED_LOOKBACK_BLOCKS = BigInt(process.env.FEED_LOOKBACK_BLOCKS || '200000');
+const FEED_CACHE_MS = 60_000;
+let feedCache: { at: number; cards: FeedCard[] } | null = null;
+const FEED_LOOKBACK_BLOCKS = BigInt(process.env.FEED_LOOKBACK_BLOCKS || '40000');
 const FEED_MAX_ITEMS = Number(process.env.FEED_MAX_ITEMS || '24');
+const FEED_LOG_CHUNK = BigInt(process.env.FEED_LOG_CHUNK || '1500');
 
 const LABEL_REGISTERED_EVENT = parseAbiItem(
   'event LabelRegistered(uint256 indexed tokenId, bytes32 indexed labelHash, string label, address owner, uint64 expiry, address indexed sender)'
@@ -36,6 +39,8 @@ export type FeedCard = {
   birthdate: string;
   buyer: `0x${string}`;
   purchasedAt: string;
+  expiresAt: string;
+  paymentTxHash: `0x${string}` | null;
   sign: string;
   title: string;
   reading: string;
@@ -73,7 +78,7 @@ async function mapNamehashToReadingName(
   const latestBlock = await publicClient.getBlockNumber();
   const fromBlock = latestBlock > FEED_LOOKBACK_BLOCKS ? latestBlock - FEED_LOOKBACK_BLOCKS : BigInt(0);
   const logs = [];
-  const chunkSize = BigInt(3000);
+  const chunkSize = FEED_LOG_CHUNK < BigInt(1) ? BigInt(1) : FEED_LOG_CHUNK;
   for (let start = fromBlock; start <= latestBlock; start += chunkSize) {
     const endCandidate = start + chunkSize - BigInt(1);
     const end = endCandidate < latestBlock ? endCandidate : latestBlock;
@@ -88,6 +93,7 @@ async function mapNamehashToReadingName(
     } catch {
       // Skip a chunk that exceeds the RPC range limit.
     }
+    await new Promise((resolve) => setTimeout(resolve, 40));
   }
 
   for (const log of logs) {
@@ -106,6 +112,10 @@ async function mapNamehashToReadingName(
 }
 
 export async function listPublishedReadings(): Promise<FeedCard[]> {
+  if (feedCache && Date.now() - feedCache.at < FEED_CACHE_MS) {
+    return feedCache.cards;
+  }
+
   const latestBlock = await publicClient.getBlockNumber();
   const fromBlock = latestBlock > FEED_LOOKBACK_BLOCKS ? latestBlock - FEED_LOOKBACK_BLOCKS : BigInt(0);
   const purchases = await getPurchasedReadings(fromBlock, latestBlock);
@@ -117,6 +127,7 @@ export async function listPublishedReadings(): Promise<FeedCard[]> {
     readingNamehash: `0x${string}`;
     buyer: `0x${string}`;
     purchasedAt: bigint;
+    paymentTxHash: `0x${string}` | null;
   }> = [];
 
   for (const purchase of newestFirst) {
@@ -128,6 +139,7 @@ export async function listPublishedReadings(): Promise<FeedCard[]> {
       readingNamehash: purchase.readingNamehash,
       buyer: record.buyer,
       purchasedAt: record.purchasedAt,
+      paymentTxHash: purchase.transactionHash,
     });
     if (published.length >= FEED_MAX_ITEMS) {
       break;
@@ -138,33 +150,94 @@ export async function listPublishedReadings(): Promise<FeedCard[]> {
   const cards: FeedCard[] = [];
 
   for (const item of published) {
-    const reading = await readText(item.readingNamehash, 'horoscope.reading');
-    if (!reading) {
-      continue;
+    const card = await toFeedCard(item, names.get(item.readingNamehash.toLowerCase()) || '');
+    if (card) {
+      cards.push(card);
     }
-
-    const readingEnsName = names.get(item.readingNamehash.toLowerCase()) || '';
-    const label = readingEnsName.split('.')[0] || '';
-    const [sourceLabel, compactDate] = label.split('-');
-    const birthdate =
-      compactDate && compactDate.length === 8
-        ? `${compactDate.slice(0, 4)}-${compactDate.slice(4, 6)}-${compactDate.slice(6, 8)}`
-        : '';
-
-    cards.push({
-      readingNamehash: item.readingNamehash,
-      readingEnsName,
-      sourceEnsName: sourceLabel ? `${sourceLabel}.eth` : 'Unknown source',
-      birthdate,
-      buyer: item.buyer,
-      purchasedAt: new Date(Number(item.purchasedAt) * 1000).toISOString(),
-      sign: await readText(item.readingNamehash, 'horoscope.sign'),
-      title: await readText(item.readingNamehash, 'horoscope.title'),
-      reading,
-      luckyColor: await readText(item.readingNamehash, 'horoscope.luckyColor'),
-      luckyNumber: await readText(item.readingNamehash, 'horoscope.luckyNumber'),
-    });
   }
 
+  feedCache = { at: Date.now(), cards };
   return cards;
+}
+
+export async function getPublishedReading(
+  readingNamehash: `0x${string}`,
+  readingEnsNameHint?: string
+): Promise<FeedCard | null> {
+  const cached = feedCache?.cards.find(
+    (card) => card.readingNamehash.toLowerCase() === readingNamehash.toLowerCase()
+  );
+  if (cached) {
+    return cached;
+  }
+
+  const record = await getReadingRecord(readingNamehash);
+  if (!record.buyer || record.buyer.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+    return null;
+  }
+  if (!record.published) {
+    return null;
+  }
+
+  const hintedName = (readingEnsNameHint || '').trim().toLowerCase();
+  const readingEnsName =
+    hintedName && namehash(hintedName).toLowerCase() === readingNamehash.toLowerCase()
+      ? hintedName
+      : '';
+
+  return toFeedCard(
+    {
+      readingNamehash,
+      buyer: record.buyer,
+      purchasedAt: record.purchasedAt,
+      paymentTxHash: null,
+    },
+    readingEnsName
+  );
+}
+
+async function toFeedCard(
+  item: {
+    readingNamehash: `0x${string}`;
+    buyer: `0x${string}`;
+    purchasedAt: bigint;
+    paymentTxHash: `0x${string}` | null;
+  },
+  readingEnsName: string
+): Promise<FeedCard | null> {
+  const [reading, sign, title, luckyColor, luckyNumber] = await Promise.all([
+    readText(item.readingNamehash, 'horoscope.reading'),
+    readText(item.readingNamehash, 'horoscope.sign'),
+    readText(item.readingNamehash, 'horoscope.title'),
+    readText(item.readingNamehash, 'horoscope.luckyColor'),
+    readText(item.readingNamehash, 'horoscope.luckyNumber'),
+  ]);
+  if (!reading) {
+    return null;
+  }
+
+  const label = readingEnsName.split('.')[0] || '';
+  const [sourceLabel, compactDate] = label.split('-');
+  const birthdate =
+    compactDate && compactDate.length === 8
+      ? `${compactDate.slice(0, 4)}-${compactDate.slice(4, 6)}-${compactDate.slice(6, 8)}`
+      : '';
+  const purchasedMs = Number(item.purchasedAt) * 1000;
+  const expiresMs = purchasedMs + 30 * 24 * 60 * 60 * 1000;
+
+  return {
+    readingNamehash: item.readingNamehash,
+    readingEnsName,
+    sourceEnsName: sourceLabel ? `${sourceLabel}.eth` : 'Unknown source',
+    birthdate,
+    buyer: item.buyer,
+    purchasedAt: new Date(purchasedMs).toISOString(),
+    expiresAt: new Date(expiresMs).toISOString(),
+    paymentTxHash: item.paymentTxHash,
+    sign,
+    title,
+    reading,
+    luckyColor,
+    luckyNumber,
+  };
 }

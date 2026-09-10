@@ -907,16 +907,26 @@ export default function CreateReadingForm({
               ? ` · ${formatBirthdate(state.result.birthdate)}`
               : ""}
           </p>
-          {state.result.readingEnsName ? (
-            <a
-              href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-block text-violet-300 underline"
-            >
-              {state.result.readingEnsName}
-            </a>
-          ) : null}
+          <div className="flex flex-wrap gap-3">
+            {state.result.readingNamehash ? (
+              <a
+                href={`/feed/${state.result.readingNamehash}`}
+                className="inline-block text-sm text-violet-300 underline"
+              >
+                Open full reading
+              </a>
+            ) : null}
+            {state.result.readingEnsName ? (
+              <a
+                href={`https://explorer.ens.dev/${state.result.readingEnsName}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block text-sm text-violet-300 underline"
+              >
+                {state.result.readingEnsName}
+              </a>
+            ) : null}
+          </div>
           <p className="whitespace-pre-wrap leading-7 text-zinc-200">
             {state.result.horoscope.reading}
           </p>

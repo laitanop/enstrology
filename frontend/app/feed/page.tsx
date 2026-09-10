@@ -1,5 +1,6 @@
 import SiteNav from '../site-nav';
 import { listPublishedReadings } from '@/lib/feed';
+import FeedCardLink from './feed-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,13 @@ export default async function CosmicFeedPage() {
   try {
     cards = await listPublishedReadings();
   } catch (error) {
-    loadError = error instanceof Error ? error.message : 'Could not load the feed.';
+    const message = error instanceof Error ? error.message : '';
+    loadError =
+      /rate limit|exceeds defined limit|too many requests/i.test(message)
+        ? 'Sepolia RPC is busy. Wait a few seconds and refresh the feed.'
+        : error instanceof Error
+          ? error.message
+          : 'Could not load the feed.';
   }
 
   return (
@@ -20,55 +27,25 @@ export default async function CosmicFeedPage() {
       </div>
       <main className="mx-auto w-full max-w-3xl">
         <h1 className="text-2xl font-semibold tracking-tight">Cosmic Feed</h1>
-        <p className="mt-2 text-sm text-zinc-300">
-          Horoscopes from ENS names. Anyone can read these.
+        <p className="mt-2 text-sm text-zinc-400">
+          Horoscopes from ENS names. Tap a card to open the full reading.
         </p>
 
         {loadError ? (
-          <div className="mt-6 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          <div className="mt-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {loadError}
           </div>
         ) : null}
 
         {!loadError && cards.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-white/15 bg-white/90 p-6 text-sm text-zinc-700 backdrop-blur-md">
+          <div className="mt-6 rounded-[28px] border border-white/10 bg-[#141022]/80 p-6 text-sm text-zinc-400">
             No public readings yet. Create a horoscope to appear here.
           </div>
         ) : null}
 
         <div className="mt-6 space-y-4">
           {cards.map((card) => (
-            <article
-              key={card.readingNamehash}
-              className="rounded-2xl border border-white/15 bg-white/90 p-5 text-zinc-900 shadow-sm backdrop-blur-md"
-            >
-              <p className="text-xs font-medium uppercase tracking-wide text-indigo-600">
-                {card.sign || 'Horoscope'}
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">{card.title || 'Untitled reading'}</h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                {card.sourceEnsName}
-                {card.birthdate ? ` · birthday ${card.birthdate}` : ''}
-              </p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
-                {card.reading}
-              </p>
-              {(card.luckyColor || card.luckyNumber) && (
-                <p className="mt-3 text-xs text-zinc-500">
-                  Lucky color {card.luckyColor || '—'} · Lucky number {card.luckyNumber || '—'}
-                </p>
-              )}
-              {card.readingEnsName ? (
-                <a
-                  href={`https://explorer.ens.dev/${card.readingEnsName}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-block text-xs underline"
-                >
-                  {card.readingEnsName}
-                </a>
-              ) : null}
-            </article>
+            <FeedCardLink key={card.readingNamehash} card={card} />
           ))}
         </div>
       </main>
