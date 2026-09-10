@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const x402Aliases = {
   "@x402/core/client": "./node_modules/@x402/core/dist/esm/client/index.mjs",
@@ -10,6 +14,7 @@ const x402Aliases = {
 
 const nextConfig: NextConfig = {
   turbopack: {
+    root: projectRoot,
     resolveAlias: x402Aliases,
   },
 };
