@@ -22,7 +22,9 @@ export const metadata: Metadata = {
   title: "ENStrology",
   description: "AI horoscopes for ENS names, written onchain with ENSv2.",
   icons: {
-    icon: "/images/logo.svg",
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
   },
 };
 
