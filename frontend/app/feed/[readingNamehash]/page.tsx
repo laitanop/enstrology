@@ -32,14 +32,14 @@ export default async function ReadingPage({ params, searchParams }: ReadingPageP
   return (
     <div className="min-h-screen px-4 py-10 text-zinc-100">
       <div className="mx-auto w-full max-w-5xl">
-        <SiteNav current="feed" />
+        <SiteNav />
       </div>
       <main className="mx-auto w-full max-w-5xl">
         <Link
-          href="/feed"
+          href="/#feed"
           className="mb-5 inline-flex min-h-11 items-center text-sm text-zinc-400 hover:text-white"
         >
-          ← Cosmic Feed
+          ← Home
         </Link>
         <ReadingDetail card={card} />
       </main>

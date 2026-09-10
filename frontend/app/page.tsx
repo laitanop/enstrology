@@ -5,10 +5,12 @@ import {
   revokeOracleTextRoles,
   writeTextRecord,
 } from '@/lib/oracle';
+import { Suspense } from 'react';
 import CreateReadingForm, {
   type CreateReadingState,
   type PermissionProofResult,
 } from './create-reading-form';
+import HomeFeed from './home-feed';
 import SiteNav from './site-nav';
 
 const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
@@ -271,29 +273,50 @@ async function retryOracleWriteAction(input: {
 
 export default function Home() {
   return (
-    <div className="min-h-dvh px-4 py-8 text-zinc-100">
-      <div className="mx-auto w-full max-w-5xl">
-        <SiteNav current="create" />
+    <div className="min-h-dvh px-4 py-6 text-zinc-100">
+      <div className="mx-auto w-full max-w-6xl">
+        <SiteNav />
+        <main className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:items-start">
+          <section
+            id="feed"
+            className="order-2 flex min-h-0 flex-col lg:order-1"
+          >
+            <h2 className="text-xl font-semibold tracking-tight text-white">
+              Cosmic Feed
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Public readings. Scroll this column — tap a card for the full
+              horoscope.
+            </p>
+            <div className="mt-4 min-h-0 max-h-[60vh] overflow-y-auto pr-1 lg:max-h-[calc(100dvh-9rem)]">
+              <Suspense
+                fallback={
+                  <p className="text-sm text-zinc-500">Loading readings...</p>
+                }
+              >
+                <HomeFeed />
+              </Suspense>
+            </div>
+          </section>
+
+          <section className="order-1 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto">
+            <header className="mb-5">
+              <h1 className="font-display text-3xl font-medium tracking-tight text-white sm:text-4xl">
+                Every name has a birthday
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                Connect your wallet and let the Oracle read your ENS stars.
+              </p>
+            </header>
+            <CreateReadingForm
+              action={createReadingAction}
+              forbiddenWriteAction={forbiddenWriteAction}
+              revokeOracleAction={revokeOracleAction}
+              retryOracleWriteAction={retryOracleWriteAction}
+            />
+          </section>
+        </main>
       </div>
-      <main className="mx-auto mt-10 flex w-full max-w-xl flex-col sm:mt-14">
-        <header className="text-center">
-          <h1 className="font-display text-4xl font-medium tracking-tight text-white sm:text-5xl">
-            Every name has a birthday
-          </h1>
-          <p className="mx-auto mt-4 max-w-md text-base leading-7 text-zinc-400">
-            The day your ENS name was born onchain decides its sign. Verify your
-            name and let the Oracle read its stars.
-          </p>
-        </header>
-        <div className="mt-8">
-          <CreateReadingForm
-            action={createReadingAction}
-            forbiddenWriteAction={forbiddenWriteAction}
-            revokeOracleAction={revokeOracleAction}
-            retryOracleWriteAction={retryOracleWriteAction}
-          />
-        </div>
-      </main>
     </div>
   );
 }

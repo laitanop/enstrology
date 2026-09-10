@@ -328,25 +328,34 @@ async function getLogsInChunks<T>(input: {
   toBlock: bigint;
   getChunk: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>;
 }): Promise<T[]> {
-  const logs: T[] = [];
+  const ranges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
   let chunkSize = MAX_LOG_BLOCK_RANGE < BigInt(1) ? BigInt(1) : MAX_LOG_BLOCK_RANGE;
   let chunkStart = input.fromBlock;
 
   while (chunkStart <= input.toBlock) {
     const chunkEndCandidate = chunkStart + chunkSize - BigInt(1);
     const chunkEnd = chunkEndCandidate < input.toBlock ? chunkEndCandidate : input.toBlock;
-    try {
-      logs.push(...(await input.getChunk(chunkStart, chunkEnd)));
-      chunkStart = chunkEnd + BigInt(1);
-      await sleep(40);
-    } catch (error) {
-      if (chunkSize > BigInt(250) && isRpcRangeError(error)) {
-        chunkSize /= BigInt(2);
-        await sleep(350);
-        continue;
-      }
-      throw error;
-    }
+    ranges.push({ fromBlock: chunkStart, toBlock: chunkEnd });
+    chunkStart = chunkEnd + BigInt(1);
+  }
+
+  const logs: T[] = [];
+  const parallel = 4;
+  for (let i = 0; i < ranges.length; i += parallel) {
+    const batch = ranges.slice(i, i + parallel);
+    const groups = await Promise.all(
+      batch.map(async ({ fromBlock, toBlock }) => {
+        try {
+          return await input.getChunk(fromBlock, toBlock);
+        } catch (error) {
+          if (isRpcRangeError(error)) {
+            return [];
+          }
+          throw error;
+        }
+      }),
+    );
+    logs.push(...groups.flat());
   }
 
   return logs;
