@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, http, isAddress } from "viem";
 import { mainnet, sepolia } from "viem/chains";
-import { findRecentlyRegisteredName, isEnsV2Owner } from "@/lib/ens-v2";
+import { findRecentlyRegisteredName } from "@/lib/ens-v2";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 const MAINNET_RPC_URL =
   process.env.MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
@@ -158,55 +159,20 @@ async function detectReverseName(
   }
 }
 
-function getCandidateNames(): string[] {
-  return (process.env.ENS_CANDIDATE_NAMES || "")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter((item) => ENS_NAME_REGEX.test(item));
-}
-
-// A freshly registered ENSv2 name has no records yet, so ownership is the only available signal.
-async function detectByRegistryOwnership(
-  address: `0x${string}`,
-): Promise<string | null> {
-  const candidates = getCandidateNames();
-  if (!candidates.length) {
-    return null;
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
-
-  const owned = await Promise.all(
-    candidates.map(async (name) =>
-      (await isEnsV2Owner(name, address)) ? name : null,
-    ),
-  );
-
-  return owned.find((name): name is string => Boolean(name)) || null;
-}
-
-// Wallets without a reverse record still resolve forward, so match known project names instead.
-async function detectByForwardResolution(
-  address: `0x${string}`,
-): Promise<string | null> {
-  const candidates = getCandidateNames();
-
-  if (!candidates.length) {
-    return null;
-  }
-
-  const resolved = await Promise.all(
-    candidates.map(async (name) => {
-      try {
-        const resolvedAddress = await sepoliaClient.getEnsAddress({ name });
-        return resolvedAddress?.toLowerCase() === address.toLowerCase()
-          ? name
-          : null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-
-  return resolved.find((name): name is string => Boolean(name)) || null;
 }
 
 export async function GET(request: NextRequest) {
@@ -218,51 +184,44 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Each lookup fails independently so one unsupported RPC cannot stop all fallbacks.
-  const sepoliaEnsName = await detectReverseName(sepoliaClient, address);
-  if (sepoliaEnsName) {
-    return NextResponse.json({
-      ensName: sepoliaEnsName,
-      source: "sepolia-reverse",
-    });
-  }
+  try {
+    const wallet = address as `0x${string}`;
 
-  const mainnetEnsName = await detectReverseName(mainnetClient, address);
-  if (mainnetEnsName) {
-    return NextResponse.json({
-      ensName: mainnetEnsName,
-      source: "mainnet-reverse",
-    });
-  }
+    // Cheap lookups first. The recent-event scan can exceed Vercel's time budget.
+    const sepoliaEnsName = await detectReverseName(sepoliaClient, wallet);
+    if (sepoliaEnsName) {
+      return NextResponse.json({
+        ensName: sepoliaEnsName,
+        source: "sepolia-reverse",
+      });
+    }
 
-  const recentlyRegisteredName = await findRecentlyRegisteredName(address);
-  if (recentlyRegisteredName) {
-    return NextResponse.json({
-      ensName: recentlyRegisteredName,
-      source: "ensv2-recent-registration",
-    });
-  }
+    const mainnetEnsName = await detectReverseName(mainnetClient, wallet);
+    if (mainnetEnsName) {
+      return NextResponse.json({
+        ensName: mainnetEnsName,
+        source: "mainnet-reverse",
+      });
+    }
 
-  const registryOwnedName = await detectByRegistryOwnership(address);
-  if (registryOwnedName) {
-    return NextResponse.json({
-      ensName: registryOwnedName,
-      source: "ensv2-registry-owner",
-    });
-  }
+    const ownedEnsName = await detectOwnedEnsName(wallet);
+    if (ownedEnsName) {
+      return NextResponse.json({ ensName: ownedEnsName, source: "owned-name" });
+    }
 
-  const forwardMatchName = await detectByForwardResolution(address);
-  if (forwardMatchName) {
-    return NextResponse.json({
-      ensName: forwardMatchName,
-      source: "sepolia-forward-match",
-    });
-  }
+    const recentlyRegisteredName = await withTimeout(
+      findRecentlyRegisteredName(wallet),
+      process.env.VERCEL ? 8_000 : 20_000,
+    );
+    if (recentlyRegisteredName) {
+      return NextResponse.json({
+        ensName: recentlyRegisteredName,
+        source: "ensv2-recent-registration",
+      });
+    }
 
-  const ownedEnsName = await detectOwnedEnsName(address);
-  if (ownedEnsName) {
-    return NextResponse.json({ ensName: ownedEnsName, source: "owned-name" });
+    return NextResponse.json({ ensName: null, source: "not-found" });
+  } catch {
+    return NextResponse.json({ ensName: null, source: "lookup-failed" });
   }
-
-  return NextResponse.json({ ensName: null, source: "not-found" });
 }

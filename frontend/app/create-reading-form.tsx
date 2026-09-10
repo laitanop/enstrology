@@ -197,6 +197,7 @@ export default function CreateReadingForm({
   const [purchaseTxHash, setPurchaseTxHash] = useState<string>("");
   const [visibilityTxHash, setVisibilityTxHash] = useState<string>("");
   const [isPaying, setIsPaying] = useState<boolean>(false);
+  const [isDetectingEns, setIsDetectingEns] = useState<boolean>(false);
   const [isDetectingBirthday, setIsDetectingBirthday] =
     useState<boolean>(false);
   const [ownershipStatus, setOwnershipStatus] =
@@ -289,21 +290,28 @@ export default function CreateReadingForm({
     }
 
     let cancelled = false;
+    setIsDetectingEns(true);
 
-    void detectPrimaryEnsFromWallet(walletAddress).then((detectedEns) => {
-      if (cancelled) {
-        return;
-      }
+    void detectPrimaryEnsFromWallet(walletAddress)
+      .then((detectedEns) => {
+        if (cancelled) {
+          return;
+        }
 
-      if (detectedEns) {
-        setSourceEnsName(detectedEns);
-        setFlowMessage(`ENS detected: ${detectedEns}. Verifying ownership...`);
-      } else {
-        setFlowMessage(
-          "Wallet connected, but no ENS name is linked to this account on Sepolia. Set a primary ENS name (or an address record) for it, or type the name below.",
-        );
-      }
-    });
+        if (detectedEns) {
+          setSourceEnsName(detectedEns);
+          setFlowMessage(`ENS detected: ${detectedEns}. Verifying ownership...`);
+        } else {
+          setFlowMessage(
+            "No primary ENS name found for this wallet. Type your name and tap Verify.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsDetectingEns(false);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -712,6 +720,19 @@ export default function CreateReadingForm({
               )}
             </div>
           </div>
+          {isDetectingEns ? (
+            <p className="text-xs text-zinc-500">
+              Looking up the ENS name for this wallet...
+            </p>
+          ) : null}
+          {!isDetectingEns &&
+          walletAddress &&
+          !sourceEnsName.trim() ? (
+            <p className="text-xs text-zinc-500">
+              No primary ENS found for this wallet. Type your name and tap
+              Verify.
+            </p>
+          ) : null}
           {ownershipStatus === "unverified" ? (
             <p className="text-xs text-rose-400">
               {ownershipMessage || "This wallet does not control that name."}

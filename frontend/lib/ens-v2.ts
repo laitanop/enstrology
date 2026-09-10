@@ -134,40 +134,33 @@ const LABEL_REGISTERED_EVENT = parseAbiItem(
 const TRANSFER_SINGLE_EVENT = parseAbiItem(
   'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)'
 );
-const SCAN_BLOCKS = BigInt(process.env.ENS_V2_SCAN_BLOCKS || '80000');
-const SCAN_CHUNK = BigInt(process.env.ENS_V2_SCAN_CHUNK || '3000');
+const SCAN_BLOCKS = BigInt(process.env.ENS_V2_SCAN_BLOCKS || '200000');
+const SCAN_CHUNK = BigInt(process.env.ENS_V2_SCAN_CHUNK || '10000');
+const SCAN_PARALLEL = 4;
 
-async function findInRecentChunks<T>(
-  getChunk: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
-  pick: (item: T) => Promise<string | null>
+async function labelFromTokenMint(
+  registry: `0x${string}`,
+  tokenId: bigint,
+  blockNumber: bigint
 ): Promise<string | null> {
-  const latestBlock = await sepoliaClient.getBlockNumber();
-  const earliestBlock = latestBlock > SCAN_BLOCKS ? latestBlock - SCAN_BLOCKS : BigInt(0);
-
-  for (let toBlock = latestBlock; toBlock > earliestBlock; toBlock -= SCAN_CHUNK) {
-    const fromBlock =
-      toBlock > earliestBlock + SCAN_CHUNK ? toBlock - SCAN_CHUNK + BigInt(1) : earliestBlock;
-    let chunk: T[] = [];
-    try {
-      chunk = await getChunk(fromBlock, toBlock);
-    } catch {
-      continue;
-    }
-
-    for (const item of chunk.reverse()) {
-      const name = await pick(item);
-      if (name) {
-        return name;
-      }
-    }
+  try {
+    const [registration] = await sepoliaClient.getLogs({
+      address: registry,
+      event: LABEL_REGISTERED_EVENT,
+      args: { tokenId },
+      fromBlock: blockNumber,
+      toBlock: blockNumber,
+    });
+    return registration?.args.label?.toLowerCase() || null;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 /**
- * ENSv2 cannot enumerate an address's names from a single call, so scan recent registry events.
- * Returns the most recently registered `.eth` name still owned by the address, or null.
+ * ENSv2 cannot list every name an address owns with one contract call.
+ * TransferSingle indexes `to`, so we can query this wallet's receipts without
+ * knowing the name in advance (no candidate list).
  */
 export async function findRecentlyRegisteredName(
   address: `0x${string}`
@@ -178,58 +171,52 @@ export async function findRecentlyRegisteredName(
     return null;
   }
 
-  const fromTransfer = await findInRecentChunks(
-    (fromBlock, toBlock) =>
-      sepoliaClient.getLogs({
-        address: registry,
-        event: TRANSFER_SINGLE_EVENT,
-        args: { to: target },
-        fromBlock,
-        toBlock,
-      }),
-    async (transfer) => {
-      const tokenId = transfer.args.id;
-      if (tokenId === undefined || transfer.blockNumber === null) {
-        return null;
-      }
-
-      const [registration] = await sepoliaClient.getLogs({
-        address: registry,
-        event: LABEL_REGISTERED_EVENT,
-        args: { tokenId },
-        fromBlock: transfer.blockNumber,
-        toBlock: transfer.blockNumber,
-      });
-      const label = registration?.args.label?.toLowerCase();
-      if (!label) {
-        return null;
-      }
-
-      const name = `${label}.eth`;
-      return (await isEnsV2Owner(name, target)) ? name : null;
-    }
-  );
-  if (fromTransfer) {
-    return fromTransfer;
+  const latestBlock = await sepoliaClient.getBlockNumber();
+  const earliestBlock = latestBlock > SCAN_BLOCKS ? latestBlock - SCAN_BLOCKS : BigInt(0);
+  const ranges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+  for (let toBlock = latestBlock; toBlock > earliestBlock; toBlock -= SCAN_CHUNK) {
+    const fromBlock =
+      toBlock > earliestBlock + SCAN_CHUNK ? toBlock - SCAN_CHUNK + BigInt(1) : earliestBlock;
+    ranges.push({ fromBlock, toBlock });
   }
 
-  return findInRecentChunks(
-    (fromBlock, toBlock) =>
-      sepoliaClient.getLogs({
-        address: registry,
-        event: LABEL_REGISTERED_EVENT,
-        fromBlock,
-        toBlock,
+  for (let i = 0; i < ranges.length; i += SCAN_PARALLEL) {
+    const batch = ranges.slice(i, i + SCAN_PARALLEL);
+    const groups = await Promise.all(
+      batch.map(async ({ fromBlock, toBlock }) => {
+        try {
+          return await sepoliaClient.getLogs({
+            address: registry,
+            event: TRANSFER_SINGLE_EVENT,
+            args: { to: target },
+            fromBlock,
+            toBlock,
+          });
+        } catch {
+          return [];
+        }
       }),
-    async (log) => {
-      const label = log.args.label?.toLowerCase();
-      const owner = log.args.owner?.toLowerCase();
-      if (!label || owner !== target) {
-        return null;
-      }
+    );
 
-      const name = `${label}.eth`;
-      return (await isEnsV2Owner(name, target)) ? name : null;
+    for (const logs of groups) {
+      for (const transfer of [...logs].reverse()) {
+        const tokenId = transfer.args.id;
+        if (tokenId === undefined || transfer.blockNumber === null) {
+          continue;
+        }
+
+        const label = await labelFromTokenMint(registry, tokenId, transfer.blockNumber);
+        if (!label) {
+          continue;
+        }
+
+        const name = `${label}.eth`;
+        if (await isEnsV2Owner(name, target)) {
+          return name;
+        }
+      }
     }
-  );
+  }
+
+  return null;
 }
