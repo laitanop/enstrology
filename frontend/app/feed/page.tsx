@@ -15,8 +15,10 @@ export default async function CosmicFeedPage() {
 
   return (
     <div className="min-h-screen px-4 py-10 text-zinc-100">
-      <main className="mx-auto w-full max-w-3xl">
+      <div className="mx-auto w-full max-w-5xl">
         <SiteNav current="feed" />
+      </div>
+      <main className="mx-auto w-full max-w-3xl">
         <h1 className="text-2xl font-semibold tracking-tight">Cosmic Feed</h1>
         <p className="mt-2 text-sm text-zinc-300">
           Public horoscopes from ENS names. Anyone can read these. Private readings stay hidden.

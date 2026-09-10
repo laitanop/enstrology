@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import NavConnect from './nav-connect';
 
 type SiteNavProps = {
   current: 'create' | 'feed';
@@ -11,8 +14,8 @@ export default function SiteNav({ current }: SiteNavProps) {
       : 'rounded-full px-3.5 py-2 text-sm font-medium text-zinc-400 hover:bg-white/5 hover:text-white';
 
   return (
-    <nav className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+    <nav className="mb-6 flex items-center justify-between gap-4">
+      <p className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight">
         <img
           src="/images/logo.svg"
           alt="ENStrology"
@@ -22,13 +25,14 @@ export default function SiteNav({ current }: SiteNavProps) {
         />
         ENStrology
       </p>
-      <div className="flex gap-2">
+      <div className="flex shrink-0 items-center gap-3">
         <Link href="/" className={linkClass('create')}>
           Create
         </Link>
         <Link href="/feed" className={linkClass('feed')}>
           Cosmic Feed
         </Link>
+        <NavConnect />
       </div>
     </nav>
   );

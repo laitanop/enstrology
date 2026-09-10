@@ -272,9 +272,11 @@ async function retryOracleWriteAction(input: {
 export default function Home() {
   return (
     <div className="min-h-dvh px-4 py-8 text-zinc-100">
-      <main className="mx-auto flex w-full max-w-xl flex-col">
+      <div className="mx-auto w-full max-w-5xl">
         <SiteNav current="create" />
-        <header className="mt-10 text-center sm:mt-14">
+      </div>
+      <main className="mx-auto mt-10 flex w-full max-w-xl flex-col sm:mt-14">
+        <header className="text-center">
           <h1 className="font-display text-4xl font-medium tracking-tight text-white sm:text-5xl">
             Every name has a birthday
           </h1>
