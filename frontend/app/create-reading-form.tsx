@@ -300,7 +300,9 @@ export default function CreateReadingForm({
 
         if (detectedEns) {
           setSourceEnsName(detectedEns);
-          setFlowMessage(`ENS detected: ${detectedEns}. Verifying ownership...`);
+          setFlowMessage(
+            `ENS detected: ${detectedEns}. Verifying ownership...`,
+          );
         } else {
           setFlowMessage(
             "No primary ENS name found for this wallet. Type your name and tap Verify.",
@@ -659,6 +661,22 @@ export default function CreateReadingForm({
 
   const submitLabel = isBusy ? "Reading the stars..." : "Reveal my ENStrology";
 
+  const renderENSName = () => {
+    if (sourceEnsName)
+      return (
+        <span className="text-white" style={{ fontSize: "14px" }}>
+          {sourceEnsName}
+        </span>
+      );
+    if (!isDetectingEns && walletAddress && !sourceEnsName.trim()) {
+      return `${walletAddress.slice(0, 6)}...${walletAddress.slice(-6)}`;
+    }
+    if (ownershipStatus === "verifying") {
+      return "Checking...";
+    }
+    return "Connect your wallet ";
+  };
+
   return (
     <div className="w-full">
       <form
@@ -666,57 +684,20 @@ export default function CreateReadingForm({
         className="rounded-[28px] border border-white/10 bg-[#141022]/80 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8"
       >
         <div className="space-y-2">
-          <label
-            htmlFor="sourceEnsName"
-            className="text-[11px] font-semibold tracking-[0.16em] text-zinc-500 uppercase"
-          >
-            Your ENS name
-          </label>
           <div className="relative">
-            <input
-              id="sourceEnsName"
-              name="sourceEnsName"
-              type="text"
-              placeholder="pamela.eth"
-              required
-              value={sourceEnsName}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setSourceEnsName(nextValue);
-                setBirthdate("");
-                setBirthdaySource("");
-                const nextKey = `${walletAddress.trim().toLowerCase()}|${nextValue.trim().toLowerCase()}`;
-                if (verifiedIdentityKey !== nextKey) {
-                  setOwnershipStatus("idle");
-                  setOwnershipMessage("");
-                }
-              }}
-              className="w-full rounded-2xl border border-white/10 bg-[#0c0a18] px-4 py-3.5 pr-44 text-base text-white outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
-            />
+            <label
+              htmlFor="sourceEnsName"
+              className="text-[11px] font-semibold tracking-[0.16em] text-zinc-500 uppercase"
+            >
+              Your ENS name :{renderENSName()}
+            </label>
+
             <div className="absolute inset-y-0 right-3 flex items-center">
-              {ownershipStatus === "verified" ? (
+              {ownershipStatus === "verified" && (
                 <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-400">
                   <span aria-hidden="true">✓</span>
                   You control this name
                 </p>
-              ) : (
-                <button
-                  type="button"
-                  disabled={
-                    isBusy || !walletAddress.trim() || !sourceEnsName.trim()
-                  }
-                  onClick={async () => {
-                    await verifyOwnership(
-                      walletAddress
-                        ? (walletAddress as `0x${string}`)
-                        : undefined,
-                      sourceEnsName,
-                    );
-                  }}
-                  className="text-xs font-medium text-violet-300 hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {ownershipStatus === "verifying" ? "Checking..." : "Verify"}
-                </button>
               )}
             </div>
           </div>
@@ -725,12 +706,9 @@ export default function CreateReadingForm({
               Looking up the ENS name for this wallet...
             </p>
           ) : null}
-          {!isDetectingEns &&
-          walletAddress &&
-          !sourceEnsName.trim() ? (
+          {!isDetectingEns && walletAddress && !sourceEnsName.trim() ? (
             <p className="text-xs text-zinc-500">
-              No primary ENS found for this wallet. Type your name and tap
-              Verify.
+              No primary ENS found for this wallet.
             </p>
           ) : null}
           {ownershipStatus === "unverified" ? (
@@ -740,60 +718,41 @@ export default function CreateReadingForm({
           ) : null}
         </div>
 
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 text-violet-300" aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <circle cx="5" cy="7" r="1.4" fill="#E8C56A" />
-                  <circle cx="11" cy="5" r="1.4" fill="#E8C56A" />
-                  <circle cx="16" cy="9" r="1.4" fill="#E8C56A" />
-                  <circle cx="19" cy="15" r="1.4" fill="#E8C56A" />
-                  <path
-                    d="M5 7L11 5L16 9L19 15"
-                    stroke="#C4B5FD"
-                    strokeWidth="1.2"
-                  />
-                </svg>
-              </span>
-              <div>
-                <p className="text-sm font-medium text-white">
-                  {birthdate
-                    ? `ENS birthday: ${formatBirthdate(birthdate)}`
-                    : isDetectingBirthday
-                      ? "Detecting ENS birthday..."
-                      : "ENS birthday"}
-                </p>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {birthdate
-                    ? birthdaySourceLabel(birthdaySource)
-                    : "Verify a name to read its onchain birth date"}
-                </p>
+        {birthdate && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 text-violet-300" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <circle cx="5" cy="7" r="1.4" fill="#E8C56A" />
+                    <circle cx="11" cy="5" r="1.4" fill="#E8C56A" />
+                    <circle cx="16" cy="9" r="1.4" fill="#E8C56A" />
+                    <circle cx="19" cy="15" r="1.4" fill="#E8C56A" />
+                    <path
+                      d="M5 7L11 5L16 9L19 15"
+                      stroke="#C4B5FD"
+                      strokeWidth="1.2"
+                    />
+                  </svg>
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {birthdate
+                      ? `ENS birthday: ${formatBirthdate(birthdate)}`
+                      : isDetectingBirthday
+                        ? "Detecting ENS birthday..."
+                        : "ENS birthday"}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {birthdate
+                      ? birthdaySourceLabel(birthdaySource)
+                      : "Verify a name to read its onchain birth date"}
+                  </p>
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void detectBirthday()}
-              disabled={isBusy}
-              className="shrink-0 text-xs font-medium text-zinc-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Refresh
-            </button>
           </div>
-          {!birthdate ? (
-            <input
-              id="birthdate"
-              name="birthdate"
-              type="date"
-              required
-              value={birthdate}
-              onChange={(event) => setBirthdate(event.target.value)}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-[#0c0a18] px-3 py-2 text-sm text-zinc-300 outline-none focus:border-violet-400/50"
-            />
-          ) : (
-            <input type="hidden" name="birthdate" value={birthdate} />
-          )}
-        </div>
+        )}
 
         {teaserSign ? (
           <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-white/15 px-4 py-4">
