@@ -120,8 +120,8 @@ async function createReadingAction(
 
     const visibilityMessage =
       visibility === 'public'
-        ? ' Reading created and marked public in the payment contract.'
-        : ' Reading created as private.';
+        ? ' Reading published to the Cosmic Feed.'
+        : ' Reading created.';
 
     return {
       status: 'success',
@@ -168,7 +168,7 @@ async function forbiddenWriteAction(input: {
     return {
       status: 'unexpected_success',
       message:
-        'Forbidden write unexpectedly succeeded. Permission boundary is not enforced on this node.',
+        'Fail. That forbidden write went through, so this node is not enforcing the Oracle boundary.',
       txHash,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,
@@ -181,7 +181,7 @@ async function forbiddenWriteAction(input: {
     return {
       status: reverted ? 'expected_revert' : 'error',
       message: reverted
-        ? 'Forbidden write reverted onchain (expected).'
+        ? 'Pass. The Oracle tried to write source.name and the chain blocked it.'
         : `Forbidden write failed with non-revert error: ${errorMessage}`,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,
@@ -208,7 +208,7 @@ async function revokeOracleAction(input: {
     const txHash = await revokeOracleTextRoles(namehash(permissionEnsName));
     return {
       status: 'success',
-      message: 'Oracle text roles revoked successfully onchain.',
+      message: 'Pass. Oracle write roles were revoked onchain.',
       txHash,
       targetEnsName: permissionEnsName,
       oracleAddress: ORACLE_ADDRESS,
@@ -248,7 +248,7 @@ async function retryOracleWriteAction(input: {
     return {
       status: 'unexpected_success',
       message:
-        'Post-revoke write unexpectedly succeeded. Oracle still has permission on this node.',
+        'Fail. The Oracle still wrote after revoke, so it still has permission.',
       txHash,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,
@@ -261,7 +261,7 @@ async function retryOracleWriteAction(input: {
     return {
       status: reverted ? 'expected_revert' : 'error',
       message: reverted
-        ? 'Post-revoke write reverted onchain (expected).'
+        ? 'Pass. After revoke, the Oracle could not write anymore.'
         : `Post-revoke write failed with non-revert error: ${errorMessage}`,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,

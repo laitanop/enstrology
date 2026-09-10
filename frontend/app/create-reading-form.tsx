@@ -117,6 +117,64 @@ type CreateReadingFormProps = {
 
 type OwnershipStatus = "idle" | "verifying" | "verified" | "unverified";
 
+function ensResolverExplorerUrl(ensName: string): string {
+  return `https://explorer.ens.dev/${encodeURIComponent(ensName.trim().toLowerCase())}/resolver`;
+}
+
+function ProofVerifyLinks({
+  ensName,
+  txHash,
+}: {
+  ensName?: string;
+  txHash?: string;
+}) {
+  const name = ensName?.trim().toLowerCase();
+  if (!name && !txHash) {
+    return null;
+  }
+
+  return (
+    <p className="mt-2 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
+      {name ? (
+        <a
+          href={ensResolverExplorerUrl(name)}
+          target="_blank"
+          rel="noreferrer"
+          className="text-violet-300 underline underline-offset-2"
+        >
+          Verify on ENS explorer
+        </a>
+      ) : null}
+      {txHash ? (
+        <a
+          href={`https://sepolia.etherscan.io/tx/${txHash}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-violet-300 underline underline-offset-2"
+        >
+          Sepolia transaction
+        </a>
+      ) : null}
+    </p>
+  );
+}
+
+function proofPassLabel(
+  result: PermissionProofResult,
+  kind: "forbid" | "revoke" | "retry",
+): string {
+  if (result.status === "expected_revert") {
+    return "Pass";
+  }
+  if (result.status === "success" && kind === "revoke") {
+    return "Pass";
+  }
+  if (result.status === "unexpected_success") {
+    return "Fail";
+  }
+  return "Error";
+}
+
 function dateToCompact(dateISO: string): string {
   return dateISO.replaceAll("-", "");
 }
@@ -203,9 +261,7 @@ export default function CreateReadingForm({
     useState<OwnershipStatus>("idle");
   const [ownershipMessage, setOwnershipMessage] = useState<string>("");
   const [verifiedIdentityKey, setVerifiedIdentityKey] = useState<string>("");
-  const [permissionNodeName, setPermissionNodeName] = useState<string>(
-    "oracle.enstrology.eth",
-  );
+  const permissionNodeName = "oracle.enstrology.eth";
   const [forbiddenResult, setForbiddenResult] =
     useState<PermissionProofResult | null>(null);
   const [revokeResult, setRevokeResult] =
@@ -785,7 +841,7 @@ export default function CreateReadingForm({
           </div>
           <button
             type="submit"
-            disabled={isBusy}
+            disabled={isBusy || isDetectingEns || !sourceEnsName.trim()}
             className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-[#C4B5FD] px-6 py-3 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span aria-hidden="true" className="mr-2">
@@ -880,110 +936,150 @@ export default function CreateReadingForm({
 
       <details className="mt-8 rounded-2xl border border-white/10 bg-[#141022]/60 p-4 text-sm text-zinc-300">
         <summary className="cursor-pointer font-medium text-zinc-200">
-          Permission proof (ENSv2)
+          Judge demo: Oracle permissions
         </summary>
-        <p className="mt-2 text-xs text-zinc-500">
-          Judge demo: prove the Oracle cannot write forbidden fields, then
-          revoke permission and prove writes are blocked.
+        <p className="mt-3 text-sm leading-6 text-zinc-400">
+          The Oracle wallet may write horoscope records, and nothing else. Click
+          the three steps in order.
         </p>
-        <div className="mt-3 space-y-1">
-          <label
-            htmlFor="permissionNodeName"
-            className="text-xs font-medium text-zinc-400"
-          >
-            Permission node for revoke test
-          </label>
-          <input
-            id="permissionNodeName"
-            type="text"
-            value={permissionNodeName}
-            onChange={(event) => setPermissionNodeName(event.target.value)}
-            placeholder="oracle.enstrology.eth"
-            className="w-full rounded-xl border border-white/10 bg-[#0c0a18] px-3 py-2 text-sm text-white outline-none focus:border-violet-400/50"
-          />
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <button
-            type="button"
-            disabled={isBusy || !sourceEnsName.trim()}
-            onClick={() =>
-              startProofTransition(async () => {
-                setFlowMessage("Attempting forbidden Oracle write...");
-                const result = await forbiddenWriteAction({
-                  targetEnsName: sourceEnsName.trim().toLowerCase(),
-                });
-                setForbiddenResult(result);
-                setFlowMessage(result.message);
-              })
-            }
-            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            1) Forbidden Write
-          </button>
-          <button
-            type="button"
-            disabled={isBusy || !permissionNodeName.trim()}
-            onClick={() =>
-              startProofTransition(async () => {
-                setFlowMessage("Revoking Oracle roles...");
-                const result = await revokeOracleAction({
-                  permissionEnsName: permissionNodeName.trim().toLowerCase(),
-                });
-                setRevokeResult(result);
-                setFlowMessage(result.message);
-              })
-            }
-            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            2) Revoke Oracle
-          </button>
-          <button
-            type="button"
-            disabled={isBusy || !permissionNodeName.trim()}
-            onClick={() =>
-              startProofTransition(async () => {
-                setFlowMessage("Attempting post-revoke Oracle write...");
-                const result = await retryOracleWriteAction({
-                  targetEnsName: permissionNodeName.trim().toLowerCase(),
-                });
-                setRetryResult(result);
-                setFlowMessage(result.message);
-              })
-            }
-            className="rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            3) Retry Write
-          </button>
-        </div>
-        {forbiddenResult ? (
-          <div
-            className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}
-          >
-            <p className="font-medium">Forbidden Write Result</p>
-            <p>{forbiddenResult.message}</p>
-            {forbiddenResult.txHash ? (
-              <p>tx: {forbiddenResult.txHash}</p>
+        <p className="mt-2 text-xs text-zinc-500">
+          Target node: {permissionNodeName}. Revoke is one-shot until roles are
+          granted again.
+        </p>
+
+        <ol className="mt-4 space-y-4">
+          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+              Step 1
+            </p>
+            <p className="mt-1 font-medium text-zinc-100">
+              Try a forbidden field
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Ask the Oracle to set{" "}
+              <span className="text-zinc-300">source.name</span> on{" "}
+              {sourceEnsName.trim() || "your ENS"}. It should not have that
+              permission.
+            </p>
+            <button
+              type="button"
+              disabled={isBusy || !sourceEnsName.trim()}
+              onClick={() =>
+                startProofTransition(async () => {
+                  setFlowMessage("Attempting forbidden Oracle write...");
+                  const result = await forbiddenWriteAction({
+                    targetEnsName: sourceEnsName.trim().toLowerCase(),
+                  });
+                  setForbiddenResult(result);
+                  setFlowMessage(result.message);
+                })
+              }
+              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Try forbidden write
+            </button>
+            {forbiddenResult ? (
+              <div
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}
+              >
+                <p className="font-medium">
+                  {proofPassLabel(forbiddenResult, "forbid")}
+                </p>
+                <p className="mt-1">{forbiddenResult.message}</p>
+                <ProofVerifyLinks
+                  ensName={forbiddenResult.targetEnsName || sourceEnsName}
+                  txHash={forbiddenResult.txHash}
+                />
+              </div>
             ) : null}
-          </div>
-        ) : null}
-        {revokeResult ? (
-          <div
-            className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}
-          >
-            <p className="font-medium">Revoke Result</p>
-            <p>{revokeResult.message}</p>
-            {revokeResult.txHash ? <p>tx: {revokeResult.txHash}</p> : null}
-          </div>
-        ) : null}
-        {retryResult ? (
-          <div
-            className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}
-          >
-            <p className="font-medium">Post-Revoke Write Result</p>
-            <p>{retryResult.message}</p>
-            {retryResult.txHash ? <p>tx: {retryResult.txHash}</p> : null}
-          </div>
-        ) : null}
+          </li>
+
+          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+              Step 2
+            </p>
+            <p className="mt-1 font-medium text-zinc-100">Fire the Oracle</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Revoke its write roles on {permissionNodeName}. After this, even
+              allowed horoscope keys should fail.
+            </p>
+            <button
+              type="button"
+              disabled={isBusy || !permissionNodeName.trim()}
+              onClick={() =>
+                startProofTransition(async () => {
+                  setFlowMessage("Revoking Oracle roles...");
+                  const result = await revokeOracleAction({
+                    permissionEnsName: permissionNodeName.trim().toLowerCase(),
+                  });
+                  setRevokeResult(result);
+                  setFlowMessage(result.message);
+                })
+              }
+              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Revoke Oracle permission
+            </button>
+            {revokeResult ? (
+              <div
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}
+              >
+                <p className="font-medium">
+                  {proofPassLabel(revokeResult, "revoke")}
+                </p>
+                <p className="mt-1">{revokeResult.message}</p>
+                <ProofVerifyLinks
+                  ensName={revokeResult.targetEnsName || permissionNodeName}
+                  txHash={revokeResult.txHash}
+                />
+              </div>
+            ) : null}
+          </li>
+
+          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+              Step 3
+            </p>
+            <p className="mt-1 font-medium text-zinc-100">
+              Try a normal write anyway
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Same Oracle, now without roles. A horoscope text write should
+              revert.
+            </p>
+            <button
+              type="button"
+              disabled={isBusy || !permissionNodeName.trim()}
+              onClick={() =>
+                startProofTransition(async () => {
+                  setFlowMessage("Attempting post-revoke Oracle write...");
+                  const result = await retryOracleWriteAction({
+                    targetEnsName: permissionNodeName.trim().toLowerCase(),
+                  });
+                  setRetryResult(result);
+                  setFlowMessage(result.message);
+                })
+              }
+              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Retry write
+            </button>
+            {retryResult ? (
+              <div
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}
+              >
+                <p className="font-medium">
+                  {proofPassLabel(retryResult, "retry")}
+                </p>
+                <p className="mt-1">{retryResult.message}</p>
+                <ProofVerifyLinks
+                  ensName={retryResult.targetEnsName || permissionNodeName}
+                  txHash={retryResult.txHash}
+                />
+              </div>
+            ) : null}
+          </li>
+        </ol>
       </details>
     </div>
   );
