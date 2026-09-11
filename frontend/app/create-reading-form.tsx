@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
+import { resolveEnstrologyPayAddress } from "@/lib/contracts";
 import type { FeedCard } from "@/lib/feed";
 import { friendlyFlowError } from "@/lib/flow-error";
 import { announceNewReading } from "./home-feed-list";
@@ -60,9 +61,10 @@ const INITIAL_STATE: CreateReadingState = {
 
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
-const PAY_ADDRESS = process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS as
-  | `0x${string}`
-  | undefined;
+const PAY_ADDRESS = resolveEnstrologyPayAddress(
+  process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS,
+  process.env.ENSTROLOGYP_PAY_ADDRESS,
+);
 const DEMO_USDC_ADDRESS = process.env.NEXT_PUBLIC_DEMO_USDC_ADDRESS as
   | `0x${string}`
   | undefined;
