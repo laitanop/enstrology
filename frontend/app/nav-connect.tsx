@@ -3,6 +3,7 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
+import { useWalletChainId } from '@/lib/wallet-chain';
 
 function MoonIcon({ className }: { className?: string }) {
   return (
@@ -108,7 +109,7 @@ function NetworkBadge({
 }
 
 export default function NavConnect() {
-  const { isConnected, chainId } = useAccount();
+  const { isConnected } = useAccount();
 
   return (
     <ConnectButton.Custom>
@@ -119,61 +120,86 @@ export default function NavConnect() {
         openChainModal,
         openConnectModal,
         mounted,
-      }) => {
-        const connected = Boolean(mounted && account && isConnected);
-        const activeChain = connected
-          ? {
-              id: chainId || chain?.id || 0,
-              name:
-                (chainId && CHAIN_NAMES[chainId]) ||
-                chain?.name ||
-                undefined,
-            }
-          : null;
-        const networkBadge = (
-          <NetworkBadge
-            connected={connected}
-            chain={activeChain}
-            onClick={connected ? openChainModal : undefined}
-          />
-        );
-
-        if (!mounted || !account) {
-          return (
-            <div className="flex items-center gap-2">
-              {networkBadge}
-              <button
-                type="button"
-                disabled={!mounted}
-                onClick={openConnectModal}
-                className="inline-flex items-center gap-2 rounded-full bg-[#C4B5FD] px-3.5 py-2 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:opacity-70"
-              >
-                <MoonIcon className="h-5 w-5" />
-                Connect wallet
-              </button>
-            </div>
-          );
-        }
-
-        return (
-          <div className="flex items-center gap-2">
-            {networkBadge}
-            <button
-              type="button"
-              onClick={openAccountModal}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#151326] py-1.5 pr-3 pl-1.5 text-sm font-medium text-zinc-100"
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0b0818]">
-                <MoonIcon className="h-5 w-5" />
-              </span>
-              {account.displayName}
-              <span aria-hidden="true" className="text-xs text-zinc-500">
-                ▾
-              </span>
-            </button>
-          </div>
-        );
-      }}
+      }) => (
+        <NavConnectInner
+          account={account}
+          chain={chain}
+          connected={Boolean(mounted && account && isConnected)}
+          mounted={mounted}
+          openAccountModal={openAccountModal}
+          openChainModal={openChainModal}
+          openConnectModal={openConnectModal}
+        />
+      )}
     </ConnectButton.Custom>
+  );
+}
+
+function NavConnectInner({
+  account,
+  chain,
+  connected,
+  mounted,
+  openAccountModal,
+  openChainModal,
+  openConnectModal,
+}: {
+  account?: { displayName: string } | undefined;
+  chain?: { id: number; name?: string } | undefined;
+  connected: boolean;
+  mounted: boolean;
+  openAccountModal: () => void;
+  openChainModal: () => void;
+  openConnectModal: () => void;
+}) {
+  const walletChainId = useWalletChainId(chain?.id);
+  const activeChain = connected
+    ? {
+        id: walletChainId || chain?.id || 0,
+        name: CHAIN_NAMES[walletChainId || chain?.id || 0] || chain?.name,
+      }
+    : null;
+  const networkBadge = (
+    <NetworkBadge
+      connected={connected}
+      chain={activeChain}
+      onClick={connected ? openChainModal : undefined}
+    />
+  );
+
+  if (!mounted || !account) {
+    return (
+      <div className="flex items-center gap-2">
+        {networkBadge}
+        <button
+          type="button"
+          disabled={!mounted}
+          onClick={openConnectModal}
+          className="inline-flex items-center gap-2 rounded-full bg-[#C4B5FD] px-3.5 py-2 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:opacity-70"
+        >
+          <MoonIcon className="h-5 w-5" />
+          Connect wallet
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {networkBadge}
+      <button
+        type="button"
+        onClick={openAccountModal}
+        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#151326] py-1.5 pr-3 pl-1.5 text-sm font-medium text-zinc-100"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0b0818]">
+          <MoonIcon className="h-5 w-5" />
+        </span>
+        {account.displayName}
+        <span aria-hidden="true" className="text-xs text-zinc-500">
+          ▾
+        </span>
+      </button>
+    </div>
   );
 }

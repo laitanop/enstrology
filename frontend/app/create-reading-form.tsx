@@ -16,6 +16,7 @@ import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
 import { resolveEnstrologyPayAddress } from "@/lib/contracts";
+import { useWalletChainId } from "@/lib/wallet-chain";
 import type { FeedCard } from "@/lib/feed";
 import { friendlyFlowError } from "@/lib/flow-error";
 import { announceNewReading } from "./home-feed-list";
@@ -237,7 +238,8 @@ export default function CreateReadingForm({
   retryOracleWriteAction,
 }: CreateReadingFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
-  const { address, isConnected, chainId } = useAccount();
+  const { address, isConnected } = useAccount();
+  const chainId = useWalletChainId();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { openConnectModal } = useConnectModal();

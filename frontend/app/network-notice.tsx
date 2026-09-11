@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { sepolia } from "wagmi/chains";
+import { useWalletChainId } from "@/lib/wallet-chain";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -20,7 +21,8 @@ const CHAIN_NAMES: Record<number, string> = {
 const ENS_V2_EXPLORER = "https://explorer.ens.dev/";
 
 export default function NetworkNotice() {
-  const { isConnected, chainId } = useAccount();
+  const { isConnected } = useAccount();
+  const chainId = useWalletChainId();
   const { switchChainAsync, isPending } = useSwitchChain();
   const [error, setError] = useState("");
 
