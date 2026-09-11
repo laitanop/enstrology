@@ -1,6 +1,8 @@
 'use client';
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount } from 'wagmi';
+import { sepolia } from 'wagmi/chains';
 
 function MoonIcon({ className }: { className?: string }) {
   return (
@@ -30,22 +32,67 @@ function MoonIcon({ className }: { className?: string }) {
   );
 }
 
-function SepoliaBadge({
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum',
+  10: 'Optimism',
+  56: 'BNB Chain',
+  137: 'Polygon',
+  8453: 'Base',
+  42161: 'Arbitrum',
+  43114: 'Avalanche',
+  11155111: 'Sepolia',
+  84532: 'Base Sepolia',
+  11155420: 'OP Sepolia',
+};
+
+function networkLabel(chain?: {
+  id?: number;
+  name?: string;
+} | null): string {
+  if (!chain?.id) {
+    return 'Unknown network';
+  }
+  return chain.name || CHAIN_NAMES[chain.id] || `Chain ${chain.id}`;
+}
+
+function NetworkBadge({
   onClick,
-  unsupported,
+  connected,
+  chain,
 }: {
   onClick?: () => void;
-  unsupported?: boolean;
+  connected: boolean;
+  chain?: { id: number; name?: string; unsupported?: boolean } | null;
 }) {
-  const className = unsupported
-    ? 'inline-flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-300'
-    : 'inline-flex items-center gap-2 rounded-full bg-[#10261c] px-3 py-2 text-sm font-medium text-emerald-300';
-  const dotClass = unsupported ? 'h-2 w-2 rounded-full bg-amber-400' : 'h-2 w-2 rounded-full bg-emerald-400';
-  const label = unsupported ? 'Switch to Sepolia' : 'Sepolia';
+  const onSepolia = Boolean(connected && chain?.id === sepolia.id);
+  const unsupported = Boolean(connected && chain && !onSepolia);
+  const label = !connected
+    ? 'Not connected'
+    : networkLabel(chain);
+
+  const className = !connected
+    ? 'inline-flex min-h-11 items-center gap-2 rounded-full bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400'
+    : unsupported
+      ? 'inline-flex min-h-11 items-center gap-2 rounded-full bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-300'
+      : 'inline-flex min-h-11 items-center gap-2 rounded-full bg-[#10261c] px-3 py-2 text-sm font-medium text-emerald-300';
+  const dotClass = !connected
+    ? 'h-2 w-2 rounded-full bg-zinc-500'
+    : unsupported
+      ? 'h-2 w-2 rounded-full bg-amber-400'
+      : 'h-2 w-2 rounded-full bg-emerald-400';
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={className}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={className}
+        title={
+          unsupported
+            ? `${label} — tap to switch to Sepolia`
+            : label
+        }
+      >
         <span className={dotClass} />
         {label}
       </button>
@@ -61,6 +108,8 @@ function SepoliaBadge({
 }
 
 export default function NavConnect() {
+  const { isConnected, chainId } = useAccount();
+
   return (
     <ConnectButton.Custom>
       {({
@@ -71,17 +120,28 @@ export default function NavConnect() {
         openConnectModal,
         mounted,
       }) => {
-        const sepoliaBadge = (
-          <SepoliaBadge
-            onClick={account ? openChainModal : undefined}
-            unsupported={Boolean(account && chain?.unsupported)}
+        const connected = Boolean(mounted && account && isConnected);
+        const activeChain = connected
+          ? {
+              id: chainId || chain?.id || 0,
+              name:
+                (chainId && CHAIN_NAMES[chainId]) ||
+                chain?.name ||
+                undefined,
+            }
+          : null;
+        const networkBadge = (
+          <NetworkBadge
+            connected={connected}
+            chain={activeChain}
+            onClick={connected ? openChainModal : undefined}
           />
         );
 
         if (!mounted || !account) {
           return (
             <div className="flex items-center gap-2">
-              {sepoliaBadge}
+              {networkBadge}
               <button
                 type="button"
                 disabled={!mounted}
@@ -97,7 +157,7 @@ export default function NavConnect() {
 
         return (
           <div className="flex items-center gap-2">
-            {sepoliaBadge}
+            {networkBadge}
             <button
               type="button"
               onClick={openAccountModal}
