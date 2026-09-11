@@ -36,7 +36,7 @@ export default async function ReadingPage({ params, searchParams }: ReadingPageP
       </div>
       <main className="mx-auto w-full max-w-5xl">
         <Link
-          href="/#feed"
+          href="/home#feed"
           className="mb-5 inline-flex min-h-11 items-center text-sm text-zinc-400 hover:text-white"
         >
           ← Home
