@@ -6,7 +6,14 @@ import {
   walletConnectWallet,
 } from '@rainbow-me/rainbowkit/wallets';
 import { http } from 'wagmi';
-import { sepolia } from 'wagmi/chains';
+import {
+  arbitrum,
+  base,
+  mainnet,
+  optimism,
+  polygon,
+  sepolia,
+} from 'wagmi/chains';
 
 const projectId =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ||
@@ -20,10 +27,15 @@ const sepoliaRpc =
 export const wagmiConfig = getDefaultConfig({
   appName: 'ENStrology',
   projectId,
-  chains: [sepolia],
+  chains: [sepolia, mainnet, base, optimism, arbitrum, polygon],
   ssr: true,
   transports: {
     [sepolia.id]: http(sepoliaRpc),
+    [mainnet.id]: http(),
+    [base.id]: http(),
+    [optimism.id]: http(),
+    [arbitrum.id]: http(),
+    [polygon.id]: http(),
   },
   wallets: [
     {

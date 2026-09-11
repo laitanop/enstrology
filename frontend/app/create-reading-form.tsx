@@ -235,7 +235,7 @@ export default function CreateReadingForm({
   retryOracleWriteAction,
 }: CreateReadingFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { openConnectModal } = useConnectModal();
@@ -281,6 +281,7 @@ export default function CreateReadingForm({
   );
   const lastAutoVerifyKeyRef = useRef<string>("");
 
+  const onSepolia = chainId === sepolia.id;
   const isBusy =
     isPending ||
     isPaying ||
@@ -816,11 +817,27 @@ export default function CreateReadingForm({
               <span className="text-emerald-400">✓ yours</span>
             ) : null}
           </p>
-          {isDetectingEns ? (
-            <p className="text-xs text-zinc-500">Looking up ENS...</p>
+          {isDetectingEns && onSepolia ? (
+            <p className="text-xs text-zinc-500">Looking up ENS on Sepolia...</p>
           ) : null}
-          {!isDetectingEns && walletAddress && !sourceEnsName.trim() ? (
-            <p className="text-xs text-zinc-500">No ENS found for this wallet.</p>
+          {onSepolia &&
+          !isDetectingEns &&
+          walletAddress &&
+          !sourceEnsName.trim() ? (
+            <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-3 text-xs leading-5 text-amber-100/90">
+              <p>
+                No ENSv2 name on Sepolia for this wallet. Mainnet names do not
+                work in this demo.
+              </p>
+              <a
+                href="https://explorer.ens.dev/"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex min-h-11 items-center font-medium text-white underline underline-offset-2"
+              >
+                Register a Sepolia name on ENS Explorer
+              </a>
+            </div>
           ) : null}
           {ownershipStatus === "unverified" ? (
             <p className="text-xs text-rose-400">
@@ -848,7 +865,12 @@ export default function CreateReadingForm({
 
         <button
           type="submit"
-          disabled={isBusy || isDetectingEns || !sourceEnsName.trim()}
+          disabled={
+            isBusy ||
+            isDetectingEns ||
+            !sourceEnsName.trim() ||
+            (Boolean(walletAddress) && !onSepolia)
+          }
           className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#C4B5FD] px-6 py-3 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitLabel} · 0.01 USDC
