@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;

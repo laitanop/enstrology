@@ -588,7 +588,9 @@ export async function generateHoroscope(
 
   const client = new OpenRouter({ apiKey });
 
-  const response = await client.chat.send({
+  let response: Awaited<ReturnType<typeof client.chat.send>>;
+  try {
+    response = await client.chat.send({
     chatRequest: {
       stream: false,
       model: DEFAULT_ORACLE_MODEL,
@@ -626,6 +628,10 @@ export async function generateHoroscope(
       ],
     },
   });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`OpenRouter failed: ${message}`);
+  }
 
   if (!('choices' in response)) {
     throw new Error('Unexpected streaming response');
@@ -653,20 +659,48 @@ export async function publishHoroscope(
     luckyNumber: string;
   }
 ): Promise<{ [key: string]: `0x${string}` }> {
-  const hashes: { [key: string]: `0x${string}` } = {};
+  if (!RESOLVER_ADDRESS) {
+    throw new Error('Missing RESOLVER_ADDRESS');
+  }
 
-  hashes.sign = await writeTextRecord(readingNamehash, 'horoscope.sign', horoscope.sign);
-  hashes.title = await writeTextRecord(readingNamehash, 'horoscope.title', horoscope.title);
-  hashes.reading = await writeTextRecord(readingNamehash, 'horoscope.reading', horoscope.reading);
-  hashes.luckyColor = await writeTextRecord(
-    readingNamehash,
-    'horoscope.luckyColor',
-    horoscope.luckyColor
-  );
-  hashes.luckyNumber = await writeTextRecord(
-    readingNamehash,
-    'horoscope.luckyNumber',
-    horoscope.luckyNumber
+  const records: Array<[string, string, string]> = [
+    ['sign', 'horoscope.sign', horoscope.sign],
+    ['title', 'horoscope.title', horoscope.title],
+    ['reading', 'horoscope.reading', horoscope.reading],
+    ['luckyColor', 'horoscope.luckyColor', horoscope.luckyColor],
+    ['luckyNumber', 'horoscope.luckyNumber', horoscope.luckyNumber],
+  ];
+
+  const nonce = await publicClient.getTransactionCount({
+    address: ORACLE_ADDRESS,
+    blockTag: 'pending',
+  });
+
+  const hashes: { [key: string]: `0x${string}` } = {};
+  try {
+    for (const [index, [id, key, value]] of records.entries()) {
+      hashes[id] = await oracleWalletClient.writeContract({
+        address: RESOLVER_ADDRESS,
+        abi: RESOLVER_ABI,
+        functionName: 'setText',
+        args: [readingNamehash, key, value],
+        nonce: nonce + index,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/insufficient funds|exceeds the balance/i.test(message)) {
+      throw new Error(
+        `Oracle wallet ${ORACLE_ADDRESS} needs Sepolia ETH to write the horoscope.`,
+      );
+    }
+    throw new Error(`Oracle setText failed: ${message}`);
+  }
+
+  await Promise.all(
+    Object.values(hashes).map((hash) =>
+      publicClient.waitForTransactionReceipt({ hash }),
+    ),
   );
 
   return hashes;
@@ -692,13 +726,15 @@ export async function writePurchasedReading(input: {
     throw new Error('sourceEnsName does not match purchased reading');
   }
 
-  const registration = await registerReadingSubname({
-    sourceEnsName,
-    birthdateISO: input.birthdate,
-    readingNamehash: input.readingNamehash,
-    owner: reading.buyer,
-  });
-  const horoscope = await generateHoroscope(sourceEnsName, input.birthdate);
+  const [registration, horoscope] = await Promise.all([
+    registerReadingSubname({
+      sourceEnsName,
+      birthdateISO: input.birthdate,
+      readingNamehash: input.readingNamehash,
+      owner: reading.buyer,
+    }),
+    generateHoroscope(sourceEnsName, input.birthdate),
+  ]);
   const transactions = await publishHoroscope(input.readingNamehash, horoscope);
   if (registration.registerTxHash) {
     transactions.register = registration.registerTxHash;
