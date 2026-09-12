@@ -179,9 +179,9 @@ export default function LandingIntro() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col px-4 py-6 text-zinc-100">
-      <header className="mx-auto flex w-full max-w-3xl justify-center pt-2">
-        <h1 className="font-display relative px-10 text-center text-4xl font-semibold tracking-wide text-[#FFF6D6] italic sm:text-5xl">
+    <div className="flex min-h-dvh flex-col px-4 py-8 text-zinc-100">
+      <header className="mx-auto flex w-full max-w-4xl justify-center pt-4">
+        <h1 className="font-display relative px-12 text-center text-5xl font-medium tracking-[0.04em] text-[#F4E4B8] sm:text-6xl">
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 -z-0"
@@ -193,32 +193,67 @@ export default function LandingIntro() {
             <span className="absolute -top-2 right-10 size-1.5 rounded-full bg-white motion-safe:animate-[star-twinkle_2.6s_ease-in-out_infinite_1s]" />
             <span className="absolute right-4 bottom-0 size-1 rounded-full bg-[#E8C56A] motion-safe:animate-[star-drift_3s_ease-in-out_infinite_0.2s]" />
           </span>
-          <span className="relative">ENStrology</span>
+          <span className="relative drop-shadow-[0_0_24px_rgba(232,197,106,0.25)]">
+            ENStrology
+          </span>
         </h1>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-8">
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center py-10">
+        <div className="relative flex w-full flex-col items-center justify-center gap-8 px-2 sm:flex-row sm:items-center sm:gap-10">
+          <svg
+            aria-hidden
+            viewBox="0 0 900 420"
+            className="pointer-events-none absolute top-1/2 left-1/2 hidden h-[130%] w-[130%] -translate-x-1/2 -translate-y-1/2 sm:block"
+          >
+            <defs>
+              <linearGradient id="orbitGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.15" />
+                <stop offset="45%" stopColor="#C4B5FD" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="#7C3AED" stopOpacity="0.15" />
+              </linearGradient>
+              <filter id="orbitBlur" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2" />
+              </filter>
+            </defs>
+            <ellipse
+              cx="450"
+              cy="210"
+              rx="400"
+              ry="155"
+              fill="none"
+              stroke="url(#orbitGlow)"
+              strokeWidth="2"
+              filter="url(#orbitBlur)"
+              className=""
+            />
+            <ellipse
+              cx="450"
+              cy="210"
+              rx="400"
+              ry="155"
+              fill="none"
+              stroke="#C4B5FD"
+              strokeOpacity="0.28"
+              strokeWidth="1"
+            />
+          </svg>
 
-        <div className="flex w-full flex-col items-center gap-6 sm:flex-row sm:items-end sm:justify-center sm:gap-8">
           <img
             src="/images/oracle.svg"
             alt="The Oracle, a blue cosmic character with a purple crystal body"
             width={220}
             height={318}
-            className="h-56 w-auto shrink-0 motion-safe:animate-[oracle-float_3.6s_ease-in-out_infinite] sm:h-72"
+            className="relative z-10 h-52 w-auto shrink-0 drop-shadow-[0_0_40px_rgba(167,139,250,0.35)] motion-safe:animate-[oracle-float_3.6s_ease-in-out_infinite] sm:h-64"
           />
 
-          <div className="relative w-full max-w-md">
-            <span
-              className="absolute -top-2 left-1/2 z-0 size-4 -translate-x-1/2 rotate-45 border-t border-l border-white/10 bg-[#141022] sm:top-10 sm:-left-2 sm:translate-x-0 sm:border-t-0 sm:border-b"
-              aria-hidden
-            />
-            <div className="relative z-10">
+          <div className="relative z-10 w-full max-w-lg">
+            <div className="rounded-[28px] border border-white/10 bg-[#12081f]/55 p-6 shadow-[0_0_50px_rgba(139,92,246,0.22)] ring-1 ring-violet-300/25 backdrop-blur-xl sm:p-7">
               <p
-                className="font-display flex min-h-[7.5rem] gap-3 rounded-[24px] border border-[#E8C56A]/20 bg-[#141022]/90 px-5 py-4 text-left text-lg leading-8 font-medium tracking-wide text-[#FFF6D6] italic shadow-[0_16px_50px_rgba(0,0,0,0.35)] sm:text-xl sm:leading-8"
+                className="font-display flex min-h-[5.5rem] items-start gap-3 text-left text-xl leading-8 font-medium text-[#F7E7B8] sm:text-2xl sm:leading-9"
                 aria-live="polite"
               >
-                <span className="mt-1 inline-flex size-8 items-center justify-center rounded-full bg-[#E8C56A]/15">
+                <span className="mt-1 inline-flex size-8 shrink-0 items-center justify-center">
                   <LineIconMark name={LINES[lineIndex].icon} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -231,24 +266,24 @@ export default function LandingIntro() {
                   ) : null}
                 </span>
               </p>
-              <p className="mt-2 text-right text-xs text-zinc-500">
+              <p className="mt-4 text-right text-xs tracking-wide text-violet-200/60">
                 {lineIndex + 1} / {LINES.length}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-10 flex min-h-12 w-full max-w-md items-center gap-3">
+        <div className="mt-12 flex w-full max-w-md items-center justify-center gap-4">
           <Link
             href="/home"
-            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-5 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-[#2A2438] px-6 text-sm font-semibold text-[#E8E2F5] transition hover:bg-[#3A3348] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
           >
             Skip
           </Link>
           {isLastLine && lineComplete ? (
             <Link
               href="/home"
-              className="inline-flex min-h-12 flex-[1.4] items-center justify-center rounded-2xl bg-[#C4B5FD] px-5 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+              className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-[#D6C7FF] px-6 text-sm font-semibold text-[#2A1848] transition hover:bg-[#E4DAFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
             >
               Let’s try it
             </Link>
@@ -256,7 +291,7 @@ export default function LandingIntro() {
             <button
               type="button"
               onClick={finishOrAdvance}
-              className="inline-flex min-h-12 flex-[1.4] items-center justify-center rounded-2xl bg-[#C4B5FD] px-5 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+              className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-[#D6C7FF] px-6 text-sm font-semibold text-[#2A1848] transition hover:bg-[#E4DAFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
             >
               {lineComplete ? "Next" : "Show all"}
             </button>
@@ -264,12 +299,10 @@ export default function LandingIntro() {
         </div>
       </main>
 
-      <footer className="mx-auto mt-4 w-full max-w-2xl px-2 pb-2 text-center text-xs leading-5 text-zinc-500">
+      <footer className="mx-auto w-full max-w-2xl px-2 pb-3 text-center text-xs leading-6 text-violet-200/45">
         <p>Built for ETHOnline Hackathon 2026 · Best Use of ENSv2</p>
-        <p className="mt-1">
-          Next.js · wagmi · RainbowKit · viem · ENSv2 · OpenRouter
-        </p>
-        <p className="mt-1 text-[#E8C56A]/80">Demo on Ethereum Sepolia</p>
+        <p>Next.js · wagmi · RainbowKit · viem · ENSv2 · OpenRouter</p>
+        <p className="text-[#E8C56A]/70">Demo on Ethereum Sepolia</p>
       </footer>
 
       <style>{`
@@ -284,6 +317,10 @@ export default function LandingIntro() {
         @keyframes star-drift {
           0%, 100% { opacity: 0.35; transform: translate(0, 0) scale(0.8); }
           50% { opacity: 1; transform: translate(6px, -8px) scale(1.2); }
+        }
+        @keyframes orbit-spin {
+          from { transform: rotate(0deg); transform-origin: 450px 210px; }
+          to { transform: rotate(360deg); transform-origin: 450px 210px; }
         }
       `}</style>
     </div>
