@@ -1,9 +1,8 @@
 'use client';
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
-import { useWalletChainId } from '@/lib/wallet-chain';
+import { chainLabel, switchWalletChain, useWalletNetwork } from '@/lib/wallet-network';
 
 function MoonIcon({ className }: { className?: string }) {
   return (
@@ -33,66 +32,36 @@ function MoonIcon({ className }: { className?: string }) {
   );
 }
 
-const CHAIN_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  10: 'Optimism',
-  56: 'BNB Chain',
-  137: 'Polygon',
-  8453: 'Base',
-  42161: 'Arbitrum',
-  43114: 'Avalanche',
-  11155111: 'Sepolia',
-  84532: 'Base Sepolia',
-  11155420: 'OP Sepolia',
-};
-
-function networkLabel(chain?: {
-  id?: number;
-  name?: string;
-} | null): string {
-  if (!chain?.id) {
-    return 'Unknown network';
-  }
-  return chain.name || CHAIN_NAMES[chain.id] || `Chain ${chain.id}`;
-}
-
 function NetworkBadge({
-  onClick,
   connected,
-  chain,
+  chainId,
 }: {
-  onClick?: () => void;
   connected: boolean;
-  chain?: { id: number; name?: string; unsupported?: boolean } | null;
+  chainId?: number;
 }) {
-  const onSepolia = Boolean(connected && chain?.id === sepolia.id);
-  const unsupported = Boolean(connected && chain && !onSepolia);
+  const onSepolia = chainId === sepolia.id;
   const label = !connected
     ? 'Not connected'
-    : networkLabel(chain);
-
+    : chainId
+      ? chainLabel(chainId)
+      : 'Detecting…';
   const className = !connected
     ? 'inline-flex min-h-11 items-center gap-2 rounded-full bg-white/5 px-3 py-2 text-sm font-medium text-zinc-400'
-    : unsupported
-      ? 'inline-flex min-h-11 items-center gap-2 rounded-full bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-300'
-      : 'inline-flex min-h-11 items-center gap-2 rounded-full bg-[#10261c] px-3 py-2 text-sm font-medium text-emerald-300';
+    : onSepolia
+      ? 'inline-flex min-h-11 items-center gap-2 rounded-full bg-[#10261c] px-3 py-2 text-sm font-medium text-emerald-300'
+      : 'inline-flex min-h-11 items-center gap-2 rounded-full bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-300';
   const dotClass = !connected
     ? 'h-2 w-2 rounded-full bg-zinc-500'
-    : unsupported
-      ? 'h-2 w-2 rounded-full bg-amber-400'
-      : 'h-2 w-2 rounded-full bg-emerald-400';
+    : onSepolia
+      ? 'h-2 w-2 rounded-full bg-emerald-400'
+      : 'h-2 w-2 rounded-full bg-amber-400';
 
-  if (onClick) {
+  if (connected && chainId && !onSepolia) {
     return (
       <button
         type="button"
-        onClick={onClick}
+        onClick={() => void switchWalletChain(sepolia.id)}
         className={className}
-        title={
-          unsupported
-            ? `${label} — tap to switch to Sepolia`
-            : label
-        }
       >
         <span className={dotClass} />
         {label}
@@ -108,63 +77,22 @@ function NetworkBadge({
   );
 }
 
-export default function NavConnect() {
-  const { isConnected } = useAccount();
-
-  return (
-    <ConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openAccountModal,
-        openChainModal,
-        openConnectModal,
-        mounted,
-      }) => (
-        <NavConnectInner
-          account={account}
-          chain={chain}
-          connected={Boolean(mounted && account && isConnected)}
-          mounted={mounted}
-          openAccountModal={openAccountModal}
-          openChainModal={openChainModal}
-          openConnectModal={openConnectModal}
-        />
-      )}
-    </ConnectButton.Custom>
-  );
-}
-
 function NavConnectInner({
   account,
-  chain,
-  connected,
-  mounted,
   openAccountModal,
-  openChainModal,
   openConnectModal,
+  mounted,
 }: {
-  account?: { displayName: string } | undefined;
-  chain?: { id: number; name?: string } | undefined;
-  connected: boolean;
-  mounted: boolean;
+  account?: { displayName: string };
   openAccountModal: () => void;
-  openChainModal: () => void;
   openConnectModal: () => void;
+  mounted: boolean;
 }) {
-  const walletChainId = useWalletChainId(chain?.id);
-  const activeChain = connected
-    ? {
-        id: walletChainId || chain?.id || 0,
-        name: CHAIN_NAMES[walletChainId || chain?.id || 0] || chain?.name,
-      }
-    : null;
+  const connected = Boolean(mounted && account);
+  const { chainId } = useWalletNetwork();
+
   const networkBadge = (
-    <NetworkBadge
-      connected={connected}
-      chain={activeChain}
-      onClick={connected ? openChainModal : undefined}
-    />
+    <NetworkBadge connected={connected} chainId={connected ? chainId : undefined} />
   );
 
   if (!mounted || !account) {
@@ -201,5 +129,20 @@ function NavConnectInner({
         </span>
       </button>
     </div>
+  );
+}
+
+export default function NavConnect() {
+  return (
+    <ConnectButton.Custom>
+      {({ account, openAccountModal, openConnectModal, mounted }) => (
+        <NavConnectInner
+          account={account}
+          openAccountModal={openAccountModal}
+          openConnectModal={openConnectModal}
+          mounted={mounted}
+        />
+      )}
+    </ConnectButton.Custom>
   );
 }

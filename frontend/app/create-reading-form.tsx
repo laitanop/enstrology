@@ -14,9 +14,9 @@ import {
 import { useRouter } from "next/navigation";
 import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
-import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
 import { resolveEnstrologyPayAddress } from "@/lib/contracts";
-import { useWalletChainId } from "@/lib/wallet-chain";
+import { switchWalletChain, useWalletNetwork } from "@/lib/wallet-network";
 import type { FeedCard } from "@/lib/feed";
 import { friendlyFlowError } from "@/lib/flow-error";
 import { announceNewReading } from "./home-feed-list";
@@ -239,9 +239,8 @@ export default function CreateReadingForm({
 }: CreateReadingFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
   const { address, isConnected } = useAccount();
-  const chainId = useWalletChainId();
+  const { chainId } = useWalletNetwork();
   const { data: walletClient } = useWalletClient();
-  const { switchChainAsync } = useSwitchChain();
   const { openConnectModal } = useConnectModal();
   const walletAddress = address || "";
   const previousAddressRef = useRef<string>("");
@@ -579,7 +578,7 @@ export default function CreateReadingForm({
   };
 
   const ensureSepolia = async (): Promise<void> => {
-    await switchChainAsync({ chainId: sepolia.id });
+    await switchWalletChain(sepolia.id);
   };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
