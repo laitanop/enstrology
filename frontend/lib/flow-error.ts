@@ -53,6 +53,16 @@ export function friendlyFlowError(raw: string): string {
   if (lower.includes("connector") && lower.includes("not connected")) {
     return "Connect a wallet first, then try Reveal again.";
   }
+  if (
+    lower.includes("revokeroles") ||
+    lower.includes("authorizename") ||
+    lower.includes("authorizetext") ||
+    lower.includes("revokeroot") ||
+    lower.includes("eaccannotrevoke") ||
+    lower.includes("eacunauthorized")
+  ) {
+    return "Could not change Oracle write roles. They may already be gone, or this admin wallet cannot change them.";
+  }
 
   const firstLine = text
     .split(/Request Arguments:|Contract Call:|Details:|Version:|\n/)[0]

@@ -1,7 +1,7 @@
 import { resolveEnstrologyPayAddress, resolveResolverAddress } from '@/lib/contracts';
 import { formatLuckyColorName } from '@/lib/reading-display';
-import { createPublicClient, createWalletClient, http, isAddress, namehash, parseAbiItem, zeroAddress } from 'viem';
-import { labelhash } from 'viem/ens';
+import { createPublicClient, createWalletClient, http, isAddress, namehash, parseAbiItem, toHex, zeroAddress } from 'viem';
+import { labelhash, packetToBytes } from 'viem/ens';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
 import { OpenRouter } from '@openrouter/sdk';
@@ -24,9 +24,7 @@ const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY;
 const DEFAULT_ORACLE_MODEL = process.env.ORACLE_MODEL || 'anthropic/claude-3.5-sonnet';
 const MAX_LOG_BLOCK_RANGE = BigInt(process.env.ORACLE_MAX_LOG_BLOCK_RANGE || '2000');
-const ALL_ROLES_MASK = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-);
+const ROLE_SET_TEXT = BigInt(1) << BigInt(4);
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
@@ -124,13 +122,46 @@ const REGISTRY_ABI = [
 
 const RESOLVER_ROLES_ABI = [
   {
-    name: 'revokeRoles',
+    name: 'authorizeNameRoles',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'node', type: 'bytes32' },
+      { name: 'toName', type: 'bytes' },
+      { name: 'roleBitmap', type: 'uint256' },
       { name: 'account', type: 'address' },
-      { name: 'roles', type: 'uint256' },
+      { name: 'grant', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'authorizeTextRoles',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'toName', type: 'bytes' },
+      { name: 'key', type: 'string' },
+      { name: 'account', type: 'address' },
+      { name: 'grant', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'grantRootRoles',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'roleBitmap', type: 'uint256' },
+      { name: 'account', type: 'address' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'revokeRootRoles',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'roleBitmap', type: 'uint256' },
+      { name: 'account', type: 'address' },
     ],
     outputs: [],
   },
@@ -510,23 +541,104 @@ export async function writeTextRecord(
   return hash;
 }
 
-export async function revokeOracleTextRoles(
-  node: `0x${string}`,
-  roleMask: bigint = ALL_ROLES_MASK
+function dnsEncodedName(ensName: string): `0x${string}` {
+  return toHex(packetToBytes(ensName.trim().toLowerCase()));
+}
+
+function resolverRoleWallets() {
+  return [getAppWalletClient(), oracleWalletClient];
+}
+
+async function writeResolverRole(
+  functionName: 'authorizeNameRoles' | 'authorizeTextRoles' | 'grantRootRoles' | 'revokeRootRoles',
+  args: readonly unknown[],
 ): Promise<`0x${string}`> {
   if (!RESOLVER_ADDRESS) {
     throw new Error('Missing RESOLVER_ADDRESS');
   }
 
-  const appWalletClient = getAppWalletClient();
-  const hash = await appWalletClient.writeContract({
-    address: RESOLVER_ADDRESS as `0x${string}`,
-    abi: RESOLVER_ROLES_ABI,
-    functionName: 'revokeRoles',
-    args: [node, ORACLE_ADDRESS, roleMask],
-  });
+  let lastError: unknown;
+  for (const client of resolverRoleWallets()) {
+    try {
+      const hash = await client.writeContract({
+        address: RESOLVER_ADDRESS as `0x${string}`,
+        abi: RESOLVER_ROLES_ABI,
+        functionName,
+        args: args as never,
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      return hash;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Could not update Oracle resolver roles.');
+}
 
-  await publicClient.waitForTransactionReceipt({ hash });
+async function tryResolverRole(
+  functionName: 'authorizeNameRoles' | 'authorizeTextRoles' | 'grantRootRoles' | 'revokeRootRoles',
+  args: readonly unknown[],
+): Promise<`0x${string}` | null> {
+  try {
+    return await writeResolverRole(functionName, args);
+  } catch {
+    return null;
+  }
+}
+
+export async function restoreOracleTextRoles(
+  ensName: string = ORACLE_ENS_NAME,
+): Promise<void> {
+  const dnsName = dnsEncodedName(ensName);
+  await tryResolverRole('grantRootRoles', [ROLE_SET_TEXT, ORACLE_ADDRESS]);
+  await tryResolverRole('authorizeNameRoles', [
+    dnsName,
+    ROLE_SET_TEXT,
+    ORACLE_ADDRESS,
+    true,
+  ]);
+}
+
+export async function revokeOracleTextRoles(
+  ensName: string,
+): Promise<`0x${string}`> {
+  if (!RESOLVER_ADDRESS) {
+    throw new Error('Missing RESOLVER_ADDRESS');
+  }
+
+  const dnsName = dnsEncodedName(ensName);
+  await tryResolverRole('authorizeNameRoles', [
+    dnsName,
+    ROLE_SET_TEXT,
+    ORACLE_ADDRESS,
+    true,
+  ]);
+
+  const nameRevoke = await tryResolverRole('authorizeNameRoles', [
+    dnsName,
+    ROLE_SET_TEXT,
+    ORACLE_ADDRESS,
+    false,
+  ]);
+  const textRevoke = await tryResolverRole('authorizeTextRoles', [
+    dnsName,
+    'horoscope.revokeTest',
+    ORACLE_ADDRESS,
+    false,
+  ]);
+  const rootRevoke = await tryResolverRole('revokeRootRoles', [
+    ROLE_SET_TEXT,
+    ORACLE_ADDRESS,
+  ]);
+
+  const hash = nameRevoke || textRevoke || rootRevoke;
+  if (!hash) {
+    throw new Error(
+      'Could not revoke Oracle write permission. The resolver admin wallet may not control those roles.',
+    );
+  }
   return hash;
 }
 
@@ -725,6 +837,8 @@ export async function writePurchasedReading(input: {
   if (reading.sourceNamehash.toLowerCase() !== expectedSourceNamehash.toLowerCase()) {
     throw new Error('sourceEnsName does not match purchased reading');
   }
+
+  await restoreOracleTextRoles().catch(() => undefined);
 
   const [registration, horoscope] = await Promise.all([
     registerReadingSubname({

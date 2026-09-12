@@ -1,6 +1,5 @@
 'use server';
 
-import { namehash } from 'viem';
 import { revokeOracleTextRoles } from '@/lib/oracle';
 
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
@@ -16,7 +15,7 @@ export async function revokeReadingOracleAction(readingEnsName: string): Promise
   }
 
   try {
-    const txHash = await revokeOracleTextRoles(namehash(normalized));
+    const txHash = await revokeOracleTextRoles(normalized);
     return {
       status: 'success',
       message: 'Oracle write roles were revoked on this reading.',

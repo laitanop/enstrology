@@ -23,6 +23,10 @@ import { switchWalletChain, useWalletNetwork } from "@/lib/wallet-network";
 import type { FeedCard } from "@/lib/feed";
 import { friendlyFlowError } from "@/lib/flow-error";
 import { announceNewReading } from "./home-feed-list";
+import JudgeDemoModal, {
+  ProofVerifyLinks,
+  type JudgeProofKind,
+} from "./judge-demo-modal";
 import ReadingProgressModal, {
   type ReadingProgressStatus,
   type ReadingProgressStep,
@@ -143,62 +147,195 @@ type CreateReadingFormProps = {
 
 type OwnershipStatus = "idle" | "verifying" | "verified" | "unverified";
 
-function ensResolverExplorerUrl(ensName: string): string {
-  return `https://explorer.ens.dev/${encodeURIComponent(ensName.trim().toLowerCase())}/resolver`;
-}
-
-function ProofVerifyLinks({
-  ensName,
-  txHash,
-}: {
-  ensName?: string;
-  txHash?: string;
-}) {
-  const name = ensName?.trim().toLowerCase();
-  if (!name && !txHash) {
-    return null;
-  }
-
-  return (
-    <p className="mt-2 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
-      {name ? (
-        <a
-          href={ensResolverExplorerUrl(name)}
-          target="_blank"
-          rel="noreferrer"
-          className="text-violet-300 underline underline-offset-2"
-        >
-          Verify on ENS explorer
-        </a>
-      ) : null}
-      {txHash ? (
-        <a
-          href={`https://sepolia.etherscan.io/tx/${txHash}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-violet-300 underline underline-offset-2"
-        >
-          Sepolia transaction
-        </a>
-      ) : null}
-    </p>
-  );
+function isProofPass(
+  result: PermissionProofResult | null,
+  kind: "forbid" | "revoke" | "retry",
+): boolean {
+  if (!result) return false;
+  if (result.status === "expected_revert") return true;
+  return result.status === "success" && kind === "revoke";
 }
 
 function proofPassLabel(
   result: PermissionProofResult,
   kind: "forbid" | "revoke" | "retry",
 ): string {
-  if (result.status === "expected_revert") {
-    return "Pass";
-  }
-  if (result.status === "success" && kind === "revoke") {
+  if (isProofPass(result, kind)) {
     return "Pass";
   }
   if (result.status === "unexpected_success") {
     return "Fail";
   }
   return "Error";
+}
+
+function proofResultClassName(result: PermissionProofResult): string {
+  if (result.status === "success" || result.status === "expected_revert") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
+  }
+  if (result.status === "unexpected_success") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-200";
+  }
+  return "border-rose-500/30 bg-rose-500/10 text-rose-200";
+}
+
+function JudgeDemoPanel({
+  permissionNodeName,
+  forbiddenTargetName,
+  isBusy,
+  isProofPending,
+  forbiddenResult,
+  revokeResult,
+  retryResult,
+  onForbidden,
+  onRevoke,
+  onRetry,
+}: {
+  permissionNodeName: string;
+  forbiddenTargetName: string;
+  isBusy: boolean;
+  isProofPending: boolean;
+  forbiddenResult: PermissionProofResult | null;
+  revokeResult: PermissionProofResult | null;
+  retryResult: PermissionProofResult | null;
+  onForbidden: () => void;
+  onRevoke: () => void;
+  onRetry: () => void;
+}) {
+  const step1Done = Boolean(forbiddenResult);
+  const step2Done = Boolean(revokeResult);
+  const step1Pass = isProofPass(forbiddenResult, "forbid");
+  const step2Pass = isProofPass(revokeResult, "revoke");
+  const step3Pass = isProofPass(retryResult, "retry");
+  const activeStep = step1Done ? (step2Done ? 3 : 2) : 1;
+  const steps = [
+    {
+      n: 1,
+      title: "Prove a bad write fails",
+      expect: "Should fail",
+      copy: `Ask the Oracle to write source.name on ${forbiddenTargetName}. That is someone else’s name.`,
+      action: "Run step 1",
+      disabled: isBusy,
+      onClick: onForbidden,
+      result: forbiddenResult,
+      kind: "forbid" as const,
+      ensName: forbiddenResult?.targetEnsName || forbiddenTargetName,
+    },
+    {
+      n: 2,
+      title: "Revoke the Oracle",
+      expect: "Should succeed",
+      copy: `Remove the Oracle’s write roles on ${permissionNodeName}.`,
+      action: "Run step 2",
+      disabled: isBusy || !step1Done,
+      onClick: onRevoke,
+      result: revokeResult,
+      kind: "revoke" as const,
+      ensName: revokeResult?.targetEnsName || permissionNodeName,
+    },
+    {
+      n: 3,
+      title: "Prove a normal write now fails",
+      expect: "Should fail",
+      copy: "Same Oracle, no roles left. A horoscope write must revert.",
+      action: "Run step 3",
+      disabled: isBusy || !step2Done,
+      onClick: onRetry,
+      result: retryResult,
+      kind: "retry" as const,
+      ensName: retryResult?.targetEnsName || permissionNodeName,
+    },
+  ];
+
+  return (
+    <section className="rounded-[28px] border border-[#E8C56A]/25 bg-[#141022]/80 p-5">
+      <p className="text-[11px] font-semibold tracking-[0.16em] text-[#E8C56A] uppercase">
+        For judges
+      </p>
+      <h2 className="mt-1 text-lg font-semibold text-white">
+        Oracle permission demo
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-zinc-400">
+        Three clicks. 1 and 3 should fail. 2 should succeed.
+      </p>
+      <div className="mt-4 flex gap-2">
+        {[1, 2, 3].map((n) => {
+          const done =
+            (n === 1 && step1Pass) ||
+            (n === 2 && step2Pass) ||
+            (n === 3 && step3Pass);
+          const current = n === activeStep;
+          return (
+            <div
+              key={n}
+              className={`flex h-9 flex-1 items-center justify-center rounded-full text-sm font-semibold ${
+                done
+                  ? "bg-emerald-500/20 text-emerald-200"
+                  : current
+                    ? "bg-[#C4B5FD] text-[#1B1233]"
+                    : "bg-white/5 text-zinc-500"
+              }`}
+            >
+              {done ? `✓ ${n}` : n}
+            </div>
+          );
+        })}
+      </div>
+      <ol className="mt-4 space-y-3">
+        {steps.map((step) => {
+          const locked = step.n > activeStep;
+          return (
+            <li
+              key={step.n}
+              className={`rounded-2xl border p-4 ${
+                locked
+                  ? "border-white/5 bg-[#0c0a18]/40 opacity-55"
+                  : "border-white/10 bg-[#0c0a18]/80"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-medium text-white">
+                  {step.n}. {step.title}
+                </p>
+                <span className="shrink-0 rounded-full bg-white/5 px-2 py-1 text-[11px] font-medium text-zinc-400">
+                  {step.expect}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">{step.copy}</p>
+              <button
+                type="button"
+                disabled={step.disabled || locked}
+                onClick={step.onClick}
+                className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-[#C4B5FD] px-4 text-sm font-semibold text-[#1B1233] transition hover:bg-[#d4c8ff] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-zinc-500"
+              >
+                {isProofPending && !locked && step.n === activeStep
+                  ? "Running…"
+                  : step.action}
+              </button>
+              {step.result ? (
+                <div
+                  className={`mt-3 rounded-2xl border px-3 py-3 text-sm ${proofResultClassName(step.result)}`}
+                >
+                  <p className="text-base font-semibold">
+                    {proofPassLabel(step.result, step.kind)}
+                  </p>
+                  <p className="mt-1 text-sm leading-6">
+                    {friendlyFlowError(step.result.message)}
+                  </p>
+                  <ProofVerifyLinks
+                    ensName={step.ensName}
+                    txHash={step.result.txHash}
+                    kind={step.kind}
+                    result={step.result}
+                  />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
 function dateToCompact(dateISO: string): string {
@@ -285,6 +422,7 @@ export default function CreateReadingForm({
   const [ownershipMessage, setOwnershipMessage] = useState<string>("");
   const [verifiedIdentityKey, setVerifiedIdentityKey] = useState<string>("");
   const permissionNodeName = "oracle.enstrology.eth";
+  const forbiddenTargetName = "esther.eth";
   const [forbiddenResult, setForbiddenResult] =
     useState<PermissionProofResult | null>(null);
   const [revokeResult, setRevokeResult] =
@@ -292,8 +430,11 @@ export default function CreateReadingForm({
   const [retryResult, setRetryResult] = useState<PermissionProofResult | null>(
     null,
   );
+  const [proofModalOpen, setProofModalOpen] = useState(false);
+  const [proofKind, setProofKind] = useState<JudgeProofKind>("forbid");
   const [isProofPending, startProofTransition] = useTransition();
   const [isDispatchPending, startDispatchTransition] = useTransition();
+  const [panel, setPanel] = useState<"reading" | "judge">("reading");
   const autoVerifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -340,6 +481,23 @@ export default function CreateReadingForm({
     },
     [],
   );
+
+  useEffect(() => {
+    if (window.location.hash === "#judge") {
+      setPanel("judge");
+    }
+  }, []);
+
+  const openPanel = (next: "reading" | "judge") => {
+    setPanel(next);
+    if (next === "judge") {
+      window.history.replaceState(null, "", "#judge");
+      return;
+    }
+    if (window.location.hash === "#judge") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  };
 
   useEffect(() => {
     const nextWallet = walletAddress;
@@ -581,16 +739,6 @@ export default function CreateReadingForm({
     () => (birthdate ? getZodiacSign(birthdate) : null),
     [birthdate],
   );
-
-  const getProofResultClassName = (result: PermissionProofResult): string => {
-    if (result.status === "success" || result.status === "expected_revert") {
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
-    }
-    if (result.status === "unexpected_success") {
-      return "border-amber-500/30 bg-amber-500/10 text-amber-200";
-    }
-    return "border-rose-500/30 bg-rose-500/10 text-rose-200";
-  };
 
   const ensureSepolia = async (): Promise<void> => {
     await switchWalletChain(sepolia.id);
@@ -849,6 +997,33 @@ export default function CreateReadingForm({
 
   return (
     <div className="w-full">
+      <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[#141022]/70 p-1">
+        <button
+          type="button"
+          onClick={() => openPanel("reading")}
+          className={`min-h-11 rounded-xl text-sm font-semibold transition ${
+            panel === "reading"
+              ? "bg-[#C4B5FD] text-[#1B1233]"
+              : "text-zinc-400 hover:text-white"
+          }`}
+        >
+          Reading
+        </button>
+        <button
+          type="button"
+          onClick={() => openPanel("judge")}
+          className={`min-h-11 rounded-xl text-sm font-semibold transition ${
+            panel === "judge"
+              ? "bg-[#C4B5FD] text-[#1B1233]"
+              : "text-zinc-400 hover:text-white"
+          }`}
+        >
+          Judge demo
+        </button>
+      </div>
+
+      {panel === "reading" ? (
+      <>
       <form
         onSubmit={onSubmit}
         className="rounded-[28px] border border-white/10 bg-[#141022]/80 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8"
@@ -926,6 +1101,8 @@ export default function CreateReadingForm({
           {friendlyFlowError(localError)}
         </div>
       ) : null}
+      </>
+      ) : null}
 
       <ReadingProgressModal
         open={progressOpen}
@@ -939,153 +1116,64 @@ export default function CreateReadingForm({
         onClose={closeProgressModal}
       />
 
-      <details className="mt-8 rounded-2xl border border-white/10 bg-[#141022]/60 p-4 text-sm text-zinc-300">
-        <summary className="cursor-pointer font-medium text-zinc-200">
-          Judge demo: Oracle permissions
-        </summary>
-        <p className="mt-3 text-sm leading-6 text-zinc-400">
-          The Oracle wallet may write horoscope records, and nothing else. Click
-          the three steps in order.
-        </p>
-        <p className="mt-2 text-xs text-zinc-500">
-          Target node: {permissionNodeName}. Revoke is one-shot until roles are
-          granted again.
-        </p>
+      {panel === "judge" ? (
+        <JudgeDemoPanel
+          permissionNodeName={permissionNodeName}
+          forbiddenTargetName={forbiddenTargetName}
+          isBusy={isBusy}
+          isProofPending={isProofPending}
+          forbiddenResult={forbiddenResult}
+          revokeResult={revokeResult}
+          retryResult={retryResult}
+          onForbidden={() => {
+            setForbiddenResult(null);
+            setProofKind("forbid");
+            setProofModalOpen(true);
+            startProofTransition(async () => {
+              const result = await forbiddenWriteAction({
+                targetEnsName: forbiddenTargetName,
+              });
+              setForbiddenResult(result);
+            });
+          }}
+          onRevoke={() => {
+            setRevokeResult(null);
+            setProofKind("revoke");
+            setProofModalOpen(true);
+            startProofTransition(async () => {
+              const result = await revokeOracleAction({
+                permissionEnsName: permissionNodeName,
+              });
+              setRevokeResult(result);
+            });
+          }}
+          onRetry={() => {
+            setRetryResult(null);
+            setProofKind("retry");
+            setProofModalOpen(true);
+            startProofTransition(async () => {
+              const result = await retryOracleWriteAction({
+                targetEnsName: permissionNodeName,
+              });
+              setRetryResult(result);
+            });
+          }}
+        />
+      ) : null}
 
-        <ol className="mt-4 space-y-4">
-          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
-              Step 1
-            </p>
-            <p className="mt-1 font-medium text-zinc-100">
-              Try a forbidden field
-            </p>
-            <p className="mt-1 text-xs leading-5 text-zinc-500">
-              Ask the Oracle to set{" "}
-              <span className="text-zinc-300">source.name</span> on{" "}
-              {sourceEnsName.trim() || "your ENS"}. It should not have that
-              permission.
-            </p>
-            <button
-              type="button"
-              disabled={isBusy || !sourceEnsName.trim()}
-              onClick={() =>
-                startProofTransition(async () => {
-                  setFlowMessage("Attempting forbidden Oracle write...");
-                  const result = await forbiddenWriteAction({
-                    targetEnsName: sourceEnsName.trim().toLowerCase(),
-                  });
-                  setForbiddenResult(result);
-                  setFlowMessage(result.message);
-                })
-              }
-              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Try forbidden write
-            </button>
-            {forbiddenResult ? (
-              <div
-                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(forbiddenResult)}`}
-              >
-                <p className="font-medium">
-                  {proofPassLabel(forbiddenResult, "forbid")}
-                </p>
-                <p className="mt-1">{forbiddenResult.message}</p>
-                <ProofVerifyLinks
-                  ensName={forbiddenResult.targetEnsName || sourceEnsName}
-                  txHash={forbiddenResult.txHash}
-                />
-              </div>
-            ) : null}
-          </li>
-
-          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
-              Step 2
-            </p>
-            <p className="mt-1 font-medium text-zinc-100">Fire the Oracle</p>
-            <p className="mt-1 text-xs leading-5 text-zinc-500">
-              Revoke its write roles on {permissionNodeName}. After this, even
-              allowed horoscope keys should fail.
-            </p>
-            <button
-              type="button"
-              disabled={isBusy || !permissionNodeName.trim()}
-              onClick={() =>
-                startProofTransition(async () => {
-                  setFlowMessage("Revoking Oracle roles...");
-                  const result = await revokeOracleAction({
-                    permissionEnsName: permissionNodeName.trim().toLowerCase(),
-                  });
-                  setRevokeResult(result);
-                  setFlowMessage(result.message);
-                })
-              }
-              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Revoke Oracle permission
-            </button>
-            {revokeResult ? (
-              <div
-                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(revokeResult)}`}
-              >
-                <p className="font-medium">
-                  {proofPassLabel(revokeResult, "revoke")}
-                </p>
-                <p className="mt-1">{revokeResult.message}</p>
-                <ProofVerifyLinks
-                  ensName={revokeResult.targetEnsName || permissionNodeName}
-                  txHash={revokeResult.txHash}
-                />
-              </div>
-            ) : null}
-          </li>
-
-          <li className="rounded-xl border border-white/10 bg-[#0c0a18]/80 p-3">
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
-              Step 3
-            </p>
-            <p className="mt-1 font-medium text-zinc-100">
-              Try a normal write anyway
-            </p>
-            <p className="mt-1 text-xs leading-5 text-zinc-500">
-              Same Oracle, now without roles. A horoscope text write should
-              revert.
-            </p>
-            <button
-              type="button"
-              disabled={isBusy || !permissionNodeName.trim()}
-              onClick={() =>
-                startProofTransition(async () => {
-                  setFlowMessage("Attempting post-revoke Oracle write...");
-                  const result = await retryOracleWriteAction({
-                    targetEnsName: permissionNodeName.trim().toLowerCase(),
-                  });
-                  setRetryResult(result);
-                  setFlowMessage(result.message);
-                })
-              }
-              className="mt-3 min-h-11 w-full rounded-xl border border-white/15 px-3 text-sm font-medium text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Retry write
-            </button>
-            {retryResult ? (
-              <div
-                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${getProofResultClassName(retryResult)}`}
-              >
-                <p className="font-medium">
-                  {proofPassLabel(retryResult, "retry")}
-                </p>
-                <p className="mt-1">{retryResult.message}</p>
-                <ProofVerifyLinks
-                  ensName={retryResult.targetEnsName || permissionNodeName}
-                  txHash={retryResult.txHash}
-                />
-              </div>
-            ) : null}
-          </li>
-        </ol>
-      </details>
+      <JudgeDemoModal
+        open={proofModalOpen}
+        running={isProofPending}
+        kind={proofKind}
+        result={
+          proofKind === "forbid"
+            ? forbiddenResult
+            : proofKind === "revoke"
+              ? revokeResult
+              : retryResult
+        }
+        onClose={() => setProofModalOpen(false)}
+      />
     </div>
   );
 }

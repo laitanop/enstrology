@@ -1,8 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { namehash } from "viem";
 import { invalidateFeedCache } from "@/lib/feed";
+import { friendlyFlowError } from "@/lib/flow-error";
 import {
   ORACLE_ADDRESS,
+  restoreOracleTextRoles,
   revokeOracleTextRoles,
   writePurchasedReading,
   writeTextRecord,
@@ -20,7 +22,7 @@ export const maxDuration = 60;
 const READING_NAMEHASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 const ENS_NAME_REGEX = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/;
 
-function getErrorMessage(error: unknown): string {
+function getRawErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
@@ -28,6 +30,19 @@ function getErrorMessage(error: unknown): string {
     return error;
   }
   return "Unknown error";
+}
+
+function getErrorMessage(error: unknown): string {
+  return friendlyFlowError(getRawErrorMessage(error));
+}
+
+function isPermissionRevert(error: unknown): boolean {
+  const raw = getRawErrorMessage(error).toLowerCase();
+  return (
+    raw.includes("revert") ||
+    raw.includes("unauthorized") ||
+    raw.includes("eacunauthorized")
+  );
 }
 
 function normalizeEnsName(value: string): string {
@@ -139,15 +154,12 @@ async function forbiddenWriteAction(input: {
       oracleAddress: ORACLE_ADDRESS,
     };
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    const reverted =
-      errorMessage.toLowerCase().includes("revert") ||
-      errorMessage.toLowerCase().includes("unauthorized");
+    const reverted = isPermissionRevert(error);
     return {
       status: reverted ? "expected_revert" : "error",
       message: reverted
         ? "Pass. The Oracle tried to write source.name and the chain blocked it."
-        : `Forbidden write failed with non-revert error: ${errorMessage}`,
+        : `Forbidden write failed: ${getErrorMessage(error)}`,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,
     };
@@ -170,7 +182,7 @@ async function revokeOracleAction(input: {
   }
 
   try {
-    const txHash = await revokeOracleTextRoles(namehash(permissionEnsName));
+    const txHash = await revokeOracleTextRoles(permissionEnsName);
     return {
       status: "success",
       message: "Pass. Oracle write roles were revoked onchain.",
@@ -179,10 +191,9 @@ async function revokeOracleAction(input: {
       oracleAddress: ORACLE_ADDRESS,
     };
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
     return {
       status: "error",
-      message: `Revoke failed: ${errorMessage}`,
+      message: getErrorMessage(error),
       targetEnsName: permissionEnsName,
       oracleAddress: ORACLE_ADDRESS,
     };
@@ -219,18 +230,17 @@ async function retryOracleWriteAction(input: {
       oracleAddress: ORACLE_ADDRESS,
     };
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    const reverted =
-      errorMessage.toLowerCase().includes("revert") ||
-      errorMessage.toLowerCase().includes("unauthorized");
+    const reverted = isPermissionRevert(error);
     return {
       status: reverted ? "expected_revert" : "error",
       message: reverted
         ? "Pass. After revoke, the Oracle could not write anymore."
-        : `Post-revoke write failed with non-revert error: ${errorMessage}`,
+        : `Post-revoke write failed: ${getErrorMessage(error)}`,
       targetEnsName,
       oracleAddress: ORACLE_ADDRESS,
     };
+  } finally {
+    await restoreOracleTextRoles(targetEnsName).catch(() => undefined);
   }
 }
 
