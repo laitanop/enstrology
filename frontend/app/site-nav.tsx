@@ -9,7 +9,7 @@ export default function SiteNav() {
     <div className="mb-6">
       <nav className="flex items-center justify-between gap-4">
         <Link
-          href="/home"
+          href="/"
           className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-white"
         >
           <img
