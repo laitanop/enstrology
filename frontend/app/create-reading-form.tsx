@@ -12,7 +12,7 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { createPublicClient, http, namehash } from "viem";
+import { createPublicClient, http, namehash, zeroAddress } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useWalletClient } from "wagmi";
 import {
@@ -91,6 +91,18 @@ const DEMO_USDC_ABI = [
 ] as const;
 
 const ENSTROLOGY_PAY_ABI = [
+  {
+    name: "readings",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "readingNamehash", type: "bytes32" }],
+    outputs: [
+      { name: "buyer", type: "address" },
+      { name: "sourceNamehash", type: "bytes32" },
+      { name: "purchasedAt", type: "uint256" },
+      { name: "published", type: "bool" },
+    ],
+  },
   {
     name: "purchaseReading",
     type: "function",
@@ -668,41 +680,74 @@ export default function CreateReadingForm({
         );
       }
 
-      setFlowMessage("Approving 0.01 demo USDC...");
-      setProgressStep("approve");
-      const approveHash = await walletClient.writeContract({
-        account: connectedWallet,
-        address: DEMO_USDC_ADDRESS,
-        abi: DEMO_USDC_ABI,
-        functionName: "approve",
-        args: [PAY_ADDRESS, PRICE],
-      });
-      setApproveTxHash(approveHash);
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-
-      setFlowMessage("Confirm the payment in your wallet...");
-      setProgressStep("pay");
-      const purchaseHash = await walletClient.writeContract({
-        account: connectedWallet,
+      const existingReading = await publicClient.readContract({
         address: PAY_ADDRESS,
         abi: ENSTROLOGY_PAY_ABI,
-        functionName: "purchaseReading",
-        args: [sourceNamehash, readingNamehash],
+        functionName: "readings",
+        args: [readingNamehash],
       });
-      setPurchaseTxHash(purchaseHash);
-      await publicClient.waitForTransactionReceipt({ hash: purchaseHash });
+      const [buyer, , purchasedAt, published] = existingReading;
+      const alreadyBought =
+        purchasedAt > BigInt(0) &&
+        buyer.toLowerCase() === connectedWallet.toLowerCase();
 
-      setFlowMessage("Sharing reading on Cosmic Feed...");
-      setProgressStep("publish");
-      const visibilityHash = await walletClient.writeContract({
-        account: connectedWallet,
-        address: PAY_ADDRESS,
-        abi: ENSTROLOGY_PAY_ABI,
-        functionName: "setReadingPublished",
-        args: [readingNamehash, true],
-      });
-      setVisibilityTxHash(visibilityHash);
-      await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
+      if (purchasedAt > BigInt(0) && buyer.toLowerCase() !== connectedWallet.toLowerCase() && buyer !== zeroAddress) {
+        throw new Error(
+          "This reading was already bought with another wallet. Use a different ENS or birthday.",
+        );
+      }
+
+      if (alreadyBought) {
+        setFlowMessage("Payment already landed. Asking the Oracle to write...");
+        if (!published) {
+          setProgressStep("publish");
+          const visibilityHash = await walletClient.writeContract({
+            account: connectedWallet,
+            address: PAY_ADDRESS,
+            abi: ENSTROLOGY_PAY_ABI,
+            functionName: "setReadingPublished",
+            args: [readingNamehash, true],
+          });
+          setVisibilityTxHash(visibilityHash);
+          await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
+        }
+      } else {
+        setFlowMessage("Approving 0.01 demo USDC...");
+        setProgressStep("approve");
+        const approveHash = await walletClient.writeContract({
+          account: connectedWallet,
+          address: DEMO_USDC_ADDRESS,
+          abi: DEMO_USDC_ABI,
+          functionName: "approve",
+          args: [PAY_ADDRESS, PRICE],
+        });
+        setApproveTxHash(approveHash);
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
+        setFlowMessage("Confirm the payment in your wallet...");
+        setProgressStep("pay");
+        const purchaseHash = await walletClient.writeContract({
+          account: connectedWallet,
+          address: PAY_ADDRESS,
+          abi: ENSTROLOGY_PAY_ABI,
+          functionName: "purchaseReading",
+          args: [sourceNamehash, readingNamehash],
+        });
+        setPurchaseTxHash(purchaseHash);
+        await publicClient.waitForTransactionReceipt({ hash: purchaseHash });
+
+        setFlowMessage("Sharing reading on Cosmic Feed...");
+        setProgressStep("publish");
+        const visibilityHash = await walletClient.writeContract({
+          account: connectedWallet,
+          address: PAY_ADDRESS,
+          abi: ENSTROLOGY_PAY_ABI,
+          functionName: "setReadingPublished",
+          args: [readingNamehash, true],
+        });
+        setVisibilityTxHash(visibilityHash);
+        await publicClient.waitForTransactionReceipt({ hash: visibilityHash });
+      }
 
       setFlowMessage("Payment landed. The Oracle is writing your horoscope...");
       setProgressStep("create");

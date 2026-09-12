@@ -24,11 +24,17 @@ export function friendlyFlowError(raw: string): string {
     return "You cancelled the wallet request.";
   }
   if (
+    lower.includes("already purchased") ||
+    lower.includes("alreadypurchased")
+  ) {
+    return "This reading is already paid. Close and tap Reveal again to finish the Oracle write.";
+  }
+  if (
     lower.includes("insufficient funds") ||
     lower.includes("exceeds the balance") ||
     lower.includes("insufficient balance")
   ) {
-    return "This wallet needs more Sepolia ETH for gas.";
+    return "This connected account needs Sepolia ETH for gas, or MetaMask could not simulate the transaction.";
   }
   if (
     lower.includes("transfer amount exceeds") ||
