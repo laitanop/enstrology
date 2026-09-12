@@ -1,4 +1,4 @@
-import { resolveEnstrologyPayAddress } from '@/lib/contracts';
+import { resolveEnstrologyPayAddress, resolveResolverAddress } from '@/lib/contracts';
 import { formatLuckyColorName } from '@/lib/reading-display';
 import { createPublicClient, createWalletClient, http, isAddress, namehash, parseAbiItem, zeroAddress } from 'viem';
 import { labelhash } from 'viem/ens';
@@ -12,7 +12,10 @@ const ENSTROLOGY_PAY_ADDRESS = resolveEnstrologyPayAddress(
   process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS,
   process.env.ENSTROLOGYP_PAY_ADDRESS,
 );
-const RESOLVER_ADDRESS = process.env.RESOLVER_ADDRESS || process.env.NEXT_PUBLIC_RESOLVER_ADDRESS;
+const RESOLVER_ADDRESS = resolveResolverAddress(
+  process.env.RESOLVER_ADDRESS,
+  process.env.NEXT_PUBLIC_RESOLVER_ADDRESS,
+);
 const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
 const ENS_V2_ETH_REGISTRY = process.env.ENS_V2_ETH_REGISTRY as `0x${string}` | undefined;
 const THIRTY_DAYS_SECONDS = BigInt(30 * 24 * 60 * 60);

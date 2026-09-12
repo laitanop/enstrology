@@ -1,3 +1,4 @@
+import { resolveResolverAddress } from '@/lib/contracts';
 import { namehash, parseAbiItem } from 'viem';
 import {
   getPurchasedReadings,
@@ -7,8 +8,10 @@ import {
   resolveOracleSubregistry,
 } from '@/lib/oracle';
 
-const RESOLVER_ADDRESS = (process.env.RESOLVER_ADDRESS ||
-  process.env.NEXT_PUBLIC_RESOLVER_ADDRESS) as `0x${string}` | undefined;
+const RESOLVER_ADDRESS = resolveResolverAddress(
+  process.env.RESOLVER_ADDRESS,
+  process.env.NEXT_PUBLIC_RESOLVER_ADDRESS,
+);
 const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
 const FEED_CACHE_MS = 180_000;
 let feedCache: { at: number; cards: FeedCard[] } | null = null;

@@ -15,7 +15,10 @@ import { useRouter } from "next/navigation";
 import { createPublicClient, http, namehash } from "viem";
 import { sepolia } from "viem/chains";
 import { useAccount, useWalletClient } from "wagmi";
-import { resolveEnstrologyPayAddress } from "@/lib/contracts";
+import {
+  resolveDemoUsdcAddress,
+  resolveEnstrologyPayAddress,
+} from "@/lib/contracts";
 import { switchWalletChain, useWalletNetwork } from "@/lib/wallet-network";
 import type { FeedCard } from "@/lib/feed";
 import { friendlyFlowError } from "@/lib/flow-error";
@@ -66,9 +69,9 @@ const PAY_ADDRESS = resolveEnstrologyPayAddress(
   process.env.NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS,
   process.env.ENSTROLOGYP_PAY_ADDRESS,
 );
-const DEMO_USDC_ADDRESS = process.env.NEXT_PUBLIC_DEMO_USDC_ADDRESS as
-  | `0x${string}`
-  | undefined;
+const DEMO_USDC_ADDRESS = resolveDemoUsdcAddress(
+  process.env.NEXT_PUBLIC_DEMO_USDC_ADDRESS,
+);
 const SEPOLIA_RPC =
   process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
   "https://ethereum-sepolia-rpc.publicnode.com";
@@ -598,13 +601,6 @@ export default function CreateReadingForm({
       setLocalError("Could not compute readingNamehash.");
       return;
     }
-    if (!PAY_ADDRESS || !DEMO_USDC_ADDRESS) {
-      setLocalError(
-        "Missing NEXT_PUBLIC_ENSTROLOGYP_PAY_ADDRESS or NEXT_PUBLIC_DEMO_USDC_ADDRESS.",
-      );
-      return;
-    }
-
     setIsPaying(true);
     setApproveTxHash("");
     setPurchaseTxHash("");
