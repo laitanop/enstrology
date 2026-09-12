@@ -29,7 +29,7 @@ const LINES = [
     icon: "revoke",
   },
   {
-    text: "Let's try it — connect your wallet on Sepolia and I'll read your stars.",
+    text: "Let's try it — connect on Sepolia. You'll need test ETH, a Sepolia ENS name, and 0.01 demo USDC.",
     icon: "try",
   },
 ] as const;

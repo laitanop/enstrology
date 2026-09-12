@@ -7,8 +7,7 @@ import {
   switchWalletChain,
   useWalletNetwork,
 } from "@/lib/wallet-network";
-
-const ENS_V2_EXPLORER = "https://explorer.ens.dev/";
+import { ENS_V2_EXPLORER, SEPOLIA_ETH_FAUCET } from "./sepolia-setup";
 
 export default function NetworkNotice() {
   const { isConnected, chainId } = useWalletNetwork();
@@ -49,7 +48,16 @@ export default function NetworkNotice() {
         Sepolia, or tap below.
       </p>
       <p className="mt-2 leading-6 text-amber-100/85">
-        You also need a Sepolia ENSv2 name from the{" "}
+        You also need{" "}
+        <a
+          href={SEPOLIA_ETH_FAUCET}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-white underline underline-offset-2"
+        >
+          Sepolia ETH
+        </a>
+        , a Sepolia name from the{" "}
         <a
           href={ENS_V2_EXPLORER}
           target="_blank"
@@ -58,7 +66,7 @@ export default function NetworkNotice() {
         >
           ENS Explorer
         </a>
-        .
+        , and 0.01 demo USDC (mint it on this page).
       </p>
       <button
         type="button"

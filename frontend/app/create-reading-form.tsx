@@ -27,6 +27,7 @@ import JudgeDemoModal, {
   ProofVerifyLinks,
   type JudgeProofKind,
 } from "./judge-demo-modal";
+import { SepoliaSetupCard } from "./sepolia-setup";
 import ReadingProgressModal, {
   type ReadingProgressStatus,
   type ReadingProgressStep,
@@ -1045,8 +1046,9 @@ export default function CreateReadingForm({
           !sourceEnsName.trim() ? (
             <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-3 text-xs leading-5 text-amber-100/90">
               <p>
-                No ENSv2 name on Sepolia for this wallet. Mainnet names do not
-                work in this demo.
+                No ENSv2 name on Sepolia for this wallet. Register one on ENS
+                Explorer (switch that site to Sepolia first). You also need
+                Sepolia ETH for gas.
               </p>
               <a
                 href="https://explorer.ens.dev/"
@@ -1174,6 +1176,7 @@ export default function CreateReadingForm({
         }
         onClose={() => setProofModalOpen(false)}
       />
+      <SepoliaSetupCard />
     </div>
   );
 }
