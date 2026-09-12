@@ -22,12 +22,6 @@ export default function SiteNav() {
           ENStrology
         </Link>
         <div className="flex shrink-0 items-center gap-3">
-          <a
-            href="/home#feed"
-            className="rounded-full px-3.5 py-2 text-sm font-medium text-zinc-400 hover:bg-white/5 hover:text-white"
-          >
-            Feed
-          </a>
           <NavConnect />
         </div>
       </nav>

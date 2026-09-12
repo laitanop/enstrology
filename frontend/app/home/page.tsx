@@ -236,7 +236,7 @@ async function retryOracleWriteAction(input: {
 
 export default function Home() {
   return (
-    <div className="min-h-dvh px-4 py-6 text-zinc-100">
+    <div className="min-h-dvh overflow-x-hidden px-4 py-6 text-zinc-100">
       <div className="mx-auto w-full max-w-6xl">
         <SiteNav />
         <main className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:items-start">
@@ -251,7 +251,7 @@ export default function Home() {
               Public readings. Scroll this column — tap a card for the full
               horoscope.
             </p>
-            <div className="mt-4 min-h-0 max-h-[60vh] overflow-y-auto pr-1 lg:max-h-[calc(100dvh-9rem)]">
+            <div className="mt-5 min-h-0 max-h-[60vh] overflow-y-auto overflow-x-hidden px-2 py-3 lg:max-h-[calc(100dvh-10rem)]">
               <Suspense
                 fallback={
                   <p className="text-sm text-zinc-500">Loading readings...</p>
@@ -262,7 +262,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="order-1 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto">
+          <section className="order-1 px-1 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overflow-x-hidden lg:px-2">
             <header className="mb-5">
               <h1 className="font-display text-3xl font-medium tracking-tight text-white sm:text-4xl">
                 Every name has a birthday

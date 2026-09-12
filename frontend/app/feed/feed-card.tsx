@@ -20,7 +20,7 @@ export default function FeedCardLink({ card }: FeedCardLinkProps) {
   return (
     <Link
       href={href}
-      className="block rounded-[28px] border border-white/10 bg-[#141022]/85 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.28)] outline-none transition hover:border-violet-400/40 focus-visible:ring-2 focus-visible:ring-violet-400/70"
+      className="group block rounded-[28px] border border-white/15 bg-[#1a1430] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)] outline-none transition duration-200 hover:border-[#E8C56A]/80 hover:bg-[#221a3d] hover:shadow-[0_0_0_1px_rgba(232,197,106,0.35),0_16px_48px_rgba(232,197,106,0.18)] focus-visible:ring-2 focus-visible:ring-[#E8C56A]/80"
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-white">{card.sourceEnsName}</p>
@@ -36,7 +36,9 @@ export default function FeedCardLink({ card }: FeedCardLinkProps) {
       </p>
       <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-zinc-500">
         <p>{card.birthdate ? `Born ${formatBirthdate(card.birthdate)}` : 'Onchain birthday'}</p>
-        <span className="text-violet-300">verify →</span>
+        <span className="text-violet-300 transition group-hover:text-[#E8C56A]">
+          Open reading →
+        </span>
       </div>
     </Link>
   );
