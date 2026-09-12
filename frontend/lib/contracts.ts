@@ -12,10 +12,6 @@ export const SEPOLIA_DEMO_USDC =
 export const SEPOLIA_RESOLVER =
   "0x29227f1c246DDB631C913c8FDd5308700Fa154DA" as const;
 
-const RETIRED_PAY_ADDRESSES = new Set([
-  "0x116eb53bd5114b5fdf3cd6511bc0c4e8329e2e1c",
-]);
-
 function firstAddress(
   fallback: `0x${string}`,
   ...candidates: Array<string | undefined>
@@ -32,17 +28,7 @@ function firstAddress(
 export function resolveEnstrologyPayAddress(
   ...candidates: Array<string | undefined>
 ): `0x${string}` {
-  for (const value of candidates) {
-    const trimmed = value?.trim();
-    if (!trimmed || !isAddress(trimmed)) {
-      continue;
-    }
-    if (RETIRED_PAY_ADDRESSES.has(trimmed.toLowerCase())) {
-      continue;
-    }
-    return trimmed as `0x${string}`;
-  }
-  return SEPOLIA_ENSTROLOGY_PAY;
+  return firstAddress(SEPOLIA_ENSTROLOGY_PAY, ...candidates);
 }
 
 export function resolveDemoUsdcAddress(
