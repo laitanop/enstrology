@@ -17,7 +17,8 @@ const RESOLVER_ADDRESS = resolveResolverAddress(
   process.env.NEXT_PUBLIC_RESOLVER_ADDRESS,
 );
 const ORACLE_ENS_NAME = (process.env.ORACLE_ENS_NAME || 'oracle.enstrology.eth').toLowerCase();
-const ENS_V2_ETH_REGISTRY = process.env.ENS_V2_ETH_REGISTRY as `0x${string}` | undefined;
+const ENS_V2_ETH_REGISTRY = (process.env.ENS_V2_ETH_REGISTRY ||
+  '0xBDC85dD5b15D7ecb354cd7cb6f2c50b4f2c4F0E2') as `0x${string}`;
 const THIRTY_DAYS_SECONDS = BigInt(30 * 24 * 60 * 60);
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY;
@@ -189,7 +190,9 @@ export function getReadingEnsName(sourceEnsName: string, birthdateISO: string): 
 }
 
 export async function resolveOracleSubregistry(): Promise<`0x${string}`> {
-  const fromEnv = process.env.ORACLE_SUBREGISTRY_ADDRESS?.trim();
+  const fromEnv =
+    process.env.ORACLE_SUBREGISTRY_ADDRESS?.trim() ||
+    '0x9e24052738b2CA3c0E2aA884500ccDe95729D326';
   if (fromEnv && isAddress(fromEnv)) {
     return fromEnv as `0x${string}`;
   }
@@ -248,19 +251,28 @@ export async function registerReadingSubname(input: {
 
   const expiry = BigInt(Math.floor(Date.now() / 1000)) + THIRTY_DAYS_SECONDS;
   const appWalletClient = getAppWalletClient();
-  const hash = await appWalletClient.writeContract({
-    address: subregistry,
-    abi: REGISTRY_ABI,
-    functionName: 'register',
-    args: [
-      label,
-      input.owner,
-      zeroAddress,
-      RESOLVER_ADDRESS as `0x${string}`,
-      BigInt(0),
-      expiry,
-    ],
-  });
+  let hash: `0x${string}`;
+  try {
+    hash = await appWalletClient.writeContract({
+      address: subregistry,
+      abi: REGISTRY_ABI,
+      functionName: 'register',
+      args: [
+        label,
+        input.owner,
+        zeroAddress,
+        RESOLVER_ADDRESS as `0x${string}`,
+        BigInt(0),
+        expiry,
+      ],
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/insufficient funds|exceeds the balance/i.test(message)) {
+      throw new Error('The app wallet needs Sepolia ETH to register the reading name.');
+    }
+    throw new Error(`Register reading name failed: ${message}`);
+  }
 
   await publicClient.waitForTransactionReceipt({ hash });
   return { readingEnsName, registerTxHash: hash };
@@ -476,12 +488,23 @@ export async function writeTextRecord(
     throw new Error('Missing RESOLVER_ADDRESS');
   }
 
-  const hash = await oracleWalletClient.writeContract({
-    address: RESOLVER_ADDRESS as `0x${string}`,
-    abi: RESOLVER_ABI,
-    functionName: 'setText',
-    args: [namehash, key, value],
-  });
+  let hash: `0x${string}`;
+  try {
+    hash = await oracleWalletClient.writeContract({
+      address: RESOLVER_ADDRESS as `0x${string}`,
+      abi: RESOLVER_ABI,
+      functionName: 'setText',
+      args: [namehash, key, value],
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/insufficient funds|exceeds the balance/i.test(message)) {
+      throw new Error(
+        `Oracle wallet ${ORACLE_ADDRESS} needs Sepolia ETH to write the horoscope.`,
+      );
+    }
+    throw new Error(`Oracle setText(${key}) failed: ${message}`);
+  }
 
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
@@ -647,4 +670,43 @@ export async function publishHoroscope(
   );
 
   return hashes;
+}
+
+export async function writePurchasedReading(input: {
+  readingNamehash: `0x${string}`;
+  sourceEnsName: string;
+  birthdate: string;
+}): Promise<{
+  readingEnsName: string;
+  horoscope: Horoscope;
+  transactions: { [key: string]: `0x${string}` };
+}> {
+  const sourceEnsName = input.sourceEnsName.trim().toLowerCase();
+  const reading = await getReadingRecord(input.readingNamehash);
+  if (reading.buyer.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+    throw new Error('Unknown readingNamehash');
+  }
+
+  const expectedSourceNamehash = computeSourceNamehash(sourceEnsName);
+  if (reading.sourceNamehash.toLowerCase() !== expectedSourceNamehash.toLowerCase()) {
+    throw new Error('sourceEnsName does not match purchased reading');
+  }
+
+  const registration = await registerReadingSubname({
+    sourceEnsName,
+    birthdateISO: input.birthdate,
+    readingNamehash: input.readingNamehash,
+    owner: reading.buyer,
+  });
+  const horoscope = await generateHoroscope(sourceEnsName, input.birthdate);
+  const transactions = await publishHoroscope(input.readingNamehash, horoscope);
+  if (registration.registerTxHash) {
+    transactions.register = registration.registerTxHash;
+  }
+
+  return {
+    readingEnsName: registration.readingEnsName,
+    horoscope,
+    transactions,
+  };
 }

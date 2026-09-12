@@ -1,10 +1,10 @@
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { namehash } from "viem";
 import { invalidateFeedCache } from "@/lib/feed";
 import {
   ORACLE_ADDRESS,
   revokeOracleTextRoles,
+  writePurchasedReading,
   writeTextRecord,
 } from "@/lib/oracle";
 import { Suspense } from "react";
@@ -33,14 +33,11 @@ function normalizeEnsName(value: string): string {
 }
 
 function getCreateReadingErrorMessage(error: unknown): string {
-  if (
-    error instanceof Error &&
-    (error.message.includes("not deployed at") ||
-      error.message.includes("Missing ") ||
-      error.message.includes("does not match") ||
-      error.message.includes("revert"))
-  ) {
+  if (error instanceof Error && error.message.trim()) {
     return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
   }
   return "Unexpected server error while creating reading.";
 }
@@ -74,59 +71,12 @@ async function createReadingAction(
     return { status: "error", message: "Invalid visibility option." };
   }
 
-  const oracleWriteApiKey = process.env.ORACLE_WRITE_API_KEY;
-  if (!oracleWriteApiKey) {
-    return { status: "error", message: "Server missing ORACLE_WRITE_API_KEY." };
-  }
-
   try {
-    const requestHeaders = await headers();
-    const host =
-      requestHeaders.get("x-forwarded-host") || requestHeaders.get("host");
-    const protocol = requestHeaders.get("x-forwarded-proto") || "http";
-    if (!host) {
-      return { status: "error", message: "Could not resolve request host." };
-    }
-
-    const response = await fetch(`${protocol}://${host}/api/oracle/write`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${oracleWriteApiKey}`,
-      },
-      body: JSON.stringify({
-        readingNamehash,
-        sourceEnsName,
-        birthdate,
-      }),
-      cache: "no-store",
+    const result = await writePurchasedReading({
+      readingNamehash: readingNamehash as `0x${string}`,
+      sourceEnsName,
+      birthdate,
     });
-
-    const responseJson = (await response.json()) as {
-      success?: boolean;
-      error?: string;
-      horoscope?: {
-        sign: string;
-        title: string;
-        reading: string;
-        luckyColor: string;
-        luckyNumber: string;
-      };
-      readingEnsName?: string;
-      transactions?: Record<string, string>;
-    };
-
-    if (
-      !response.ok ||
-      !responseJson.success ||
-      !responseJson.horoscope ||
-      !responseJson.transactions
-    ) {
-      return {
-        status: "error",
-        message: responseJson.error || "Failed to create reading.",
-      };
-    }
 
     const visibilityMessage =
       visibility === "public"
@@ -143,10 +93,10 @@ async function createReadingAction(
         sourceEnsName,
         birthdate,
         readingNamehash,
-        readingEnsName: responseJson.readingEnsName || "",
+        readingEnsName: result.readingEnsName || "",
         visibility,
-        horoscope: responseJson.horoscope,
-        transactions: responseJson.transactions,
+        horoscope: result.horoscope,
+        transactions: result.transactions,
       },
     };
   } catch (error) {

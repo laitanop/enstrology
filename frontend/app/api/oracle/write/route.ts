@@ -1,11 +1,4 @@
-import {
-  computeSourceNamehash,
-  generateHoroscope,
-  getReadingRecord,
-  publishHoroscope,
-  registerReadingSubname,
-  ZERO_ADDRESS,
-} from '@/lib/oracle';
+import { writePurchasedReading } from '@/lib/oracle';
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 
@@ -128,56 +121,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid birthdate format' }, { status: 400 });
     }
 
-    const reading = await getReadingRecord(readingNamehash as `0x${string}`);
-    if (reading.buyer.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
-      return NextResponse.json({ error: 'Unknown readingNamehash' }, { status: 404 });
-    }
-
-    const expectedSourceNamehash = computeSourceNamehash(normalizedEnsName);
-    if (reading.sourceNamehash.toLowerCase() !== expectedSourceNamehash.toLowerCase()) {
-      return NextResponse.json(
-        { error: 'sourceEnsName does not match purchased reading' },
-        { status: 403 }
-      );
-    }
-
-    console.log('Registering reading subname under oracle.enstrology.eth');
-    const registration = await registerReadingSubname({
-      sourceEnsName: normalizedEnsName,
-      birthdateISO: birthdate,
+    const result = await writePurchasedReading({
       readingNamehash: readingNamehash as `0x${string}`,
-      owner: reading.buyer,
+      sourceEnsName: normalizedEnsName,
+      birthdate,
     });
-
-    console.log('Generating horoscope for purchased reading');
-    const horoscope = await generateHoroscope(normalizedEnsName, birthdate);
-
-    console.log('Publishing horoscope to purchased reading');
-    const txHashes = await publishHoroscope(readingNamehash as `0x${string}`, horoscope);
-    if (registration.registerTxHash) {
-      txHashes.register = registration.registerTxHash;
-    }
 
     return NextResponse.json({
       success: true,
-      readingEnsName: registration.readingEnsName,
-      horoscope,
-      transactions: txHashes,
+      readingEnsName: result.readingEnsName,
+      horoscope: result.horoscope,
+      transactions: result.transactions,
     });
   } catch (error) {
     console.error('Error:', error);
-    const message = error instanceof Error ? error.message : '';
-    if (
-      message.includes('Missing ') ||
-      message.includes('not deployed') ||
-      message.includes('does not match') ||
-      message.includes('revert')
-    ) {
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Oracle write failed.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
